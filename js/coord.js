@@ -1,7 +1,8 @@
 // FORTALECER · pantallas del coordinador
 import { $, $$, esc, ic, AREAS, SHORT, col, soft, aico, chip, toast, errorMsg, modal, cerrarModal, confirmar, head, kpi, cargando, vacio, corp, field, selectField, fecha, fechaHora, hora, pill, iniciales, leerExcel, descargarExcel, normal } from './lib.js';
 import { sb, q, rpc, usuarios } from './api.js';
-import { reporteAplicacion, listaAplicaciones } from './reportes.js';
+import { reporteAplicacion, listaAplicaciones, evolucionHTML } from './reportes.js';
+import { avisosHTML, conectarAvisos } from './avisos.js';
 
 export async function render(ctx) {
   const { seccion } = ctx;
@@ -40,6 +41,7 @@ async function inicio({ S, main, go }) {
   const proximas = apls.filter(a => new Date(a.inicio) > ahora).sort((a, b) => new Date(a.inicio) - new Date(b.inicio));
   const g = id => grupos.find(x => x.id === id);
   let sel = enCurso[0]?.id;
+  let avHTML = await avisosHTML({ S, gestionar: true });
   const pintar = async () => {
     let sala = '';
     if (sel) {
@@ -50,9 +52,10 @@ async function inicio({ S, main, go }) {
       const cls = { entrego: 's-done', respondiendo: 's-doing', sin_conexion: 's-off', sin_empezar: 's-not', bloqueado: 's-not', termino_tiempo: 's-done' };
       const txt = { entrego: 'Entregó', respondiendo: 'Respondiendo', sin_conexion: 'Sin conexión', sin_empezar: 'Sin empezar', bloqueado: 'Sin autorización', termino_tiempo: 'Se acabó su tiempo' };
       sala = `<div class="card w8"><div class="row between"><div><span class="lbl">Sala en vivo · se actualiza cada 30 segundos</span><h2>Grupo ${esc(grupoTxt(g(a.grupo_id)))} · Simulacro ${a.simulacro_id}</h2></div>${enCurso.length > 1 ? `<div class="tabs" role="group">${enCurso.map(x => `<button type="button" data-sala="${x.id}" aria-pressed="${x.id === sel}">${esc(grupoTxt(g(x.grupo_id)))}</button>`).join('')}</div>` : ''}</div>
-        ${est.length ? `<div class="room"><div class="board" aria-hidden="true"></div><div class="seats">${est.map(e => `<button type="button" class="seat ${cls[e.estado]}" data-est="${e.estudiante_id}" title="${esc(e.nombre)}: ${txt[e.estado]} · ${e.respondidas} respondidas${e.minutos_extra ? ' · +' + e.minutos_extra + ' min' : ''}">${esc(iniciales(e.nombre))}</button>`).join('')}</div></div>` : vacio('i-users', 'Este grupo no tiene estudiantes')}
+        ${est.length ? `<div class="room"><div class="board" aria-hidden="true"></div><div class="seats">${est.map(e => `<button type="button" class="seat ${cls[e.estado]}" data-est="${e.estudiante_id}" title="${esc(e.nombre)}: ${txt[e.estado]} · ${e.respondidas} respondidas${e.minutos_extra ? ' · +' + e.minutos_extra + ' min' : ''}${e.salidas ? ' · salió ' + e.salidas + ' veces de la ventana' : ''}">${esc(iniciales(e.nombre))}${e.salidas ? `<span class="sal" aria-label="${e.salidas} salidas">${e.salidas}</span>` : ''}</button>`).join('')}</div></div>` : vacio('i-users', 'Este grupo no tiene estudiantes')}
         <div class="legend"><span><i class="l4"></i>Entregó (${cuenta('entrego') + cuenta('termino_tiempo')})</span><span><i style="background:var(--a1)"></i>Respondiendo (${cuenta('respondiendo')})</span><span><i class="l2"></i>Sin conexión (${cuenta('sin_conexion')})</span><span><i style="background:var(--sunk)"></i>Sin empezar (${cuenta('sin_empezar')})</span>${cuenta('bloqueado') ? `<span>${cuenta('bloqueado')} sin autorización</span>` : ''}</div>
-        <p class="xs muted">Toque un puesto para ampliar el tiempo o habilitar de nuevo a ese estudiante. Termina a las ${hora(finDe(a))}.</p></div>`;
+        <p class="xs muted">Toque un puesto para ampliar el tiempo o habilitar de nuevo a ese estudiante. El número naranja indica cuántas veces salió de la ventana del simulacro. Termina a las ${hora(finDe(a))}</p>
+        <div class="row"><button class="btn sec sm" type="button" data-avance="${a.id}">${ic('i-results', 15)}Ver avance de resultados</button></div></div>`;
       main.dataset.est = JSON.stringify(est.map(e => [e.estudiante_id, e.nombre, e.estado]));
     }
     const total = enCurso.length;
@@ -65,13 +68,16 @@ async function inicio({ S, main, go }) {
         ${pend.count ? `<div class="alert a-warn">${ic('i-warn')}<div><b>${pend.count} estudiantes sin autorización del acudiente</b>No pueden presentar simulacros. <button class="linkbtn" type="button" data-ir="estudiantes">Revisar</button></div></div>` : `<div class="alert a-ok">${ic('i-sync')}<div><b>Todas las autorizaciones al día</b></div></div>`}
         ${grupos.length ? '' : `<div class="alert a-info">${ic('i-info')}<div><b>Su colegio aún no tiene grupos</b>Créelos en Estudiantes → Grupos.</div></div>`}
         ${proximas.slice(0, 3).map(a => `<div class="alert a-info">${ic('i-cal')}<div><b>Simulacro ${a.simulacro_id} · ${esc(grupoTxt(g(a.grupo_id)))}</b>${fechaHora(a.inicio)} · ${Math.round(a.duracion_min / 60 * 10) / 10} horas</div></div>`).join('')}</div>
+      ${avHTML}
     </div>${corp}`;
+    conectarAvisos(main, { S, alCambiar: async () => { avHTML = await avisosHTML({ S, gestionar: true }); pintar(); } });
   };
   await pintar();
   vivo = setInterval(() => { if (!document.body.contains(main) || location.hash !== '#/inicio') return clearInterval(vivo); if (sel && !$('#modalbox').innerHTML) pintar(); }, 30000);
   main.onclick = async e => {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.sala) { sel = b.dataset.sala; pintar(); }
+    if (b.dataset.avance) go('reportes/' + b.dataset.avance);
     if (b.dataset.est) accionesEstudiante(sel, b.dataset.est, JSON.parse(main.dataset.est || '[]').find(x => x[0] === b.dataset.est), pintar);
   };
 }
@@ -299,6 +305,10 @@ async function reportes({ S, main, params, go }) {
   if (params[0]) return reporteAplicacion(main, params[0], { rol: 'coordinador', volver: `<div class="row"><button class="btn ghost sm" type="button" data-ir="reportes">← Todos los reportes</button></div>` });
   main.innerHTML = cargando();
   const [grupos, apls] = await Promise.all([cargarGrupos(S), q(sb.from('aplicaciones').select('*').eq('colegio_id', S.perfil.colegio_id).order('inicio', { ascending: false }))]);
-  main.innerHTML = `${head(esc(S.colegio.nombre), 'Reportes')}<div class="card"><p class="small muted">Elija un simulacro terminado para ver el reporte del grupo: promedios por área, niveles, puestos, análisis por pregunta, sugerencias y boletines individuales para imprimir.</p>${listaAplicaciones(apls, grupos)}</div>${corp}`;
+  main.innerHTML = `${head(esc(S.colegio.nombre), 'Reportes')}<div class="card"><p class="small muted">Mientras un simulacro está abierto, pulse <b>Ver avance</b> para ver los resultados de los que ya entregaron. Cuando termine el tiempo, verá el <b>Reporte final</b>: promedios por área, niveles, puestos, análisis por pregunta, cuadro de honor, estudiantes en riesgo, sugerencias y boletines para imprimir.</p>${listaAplicaciones(apls, grupos, { avance: true })}</div>
+    <div class="card"><div class="row between"><div><span class="lbl">Evolución</span><h2>¿Cómo va cada grupo?</h2></div>${grupos.length ? `<select id="evg" aria-label="Grupo">${grupos.map(x => `<option value="${x.id}">Grupo ${esc(grupoTxt(x))}</option>`).join('')}</select>` : ''}</div><div id="evo">${grupos.length ? cargando() : vacio('i-users', 'Sin grupos')}</div></div>${corp}`;
+  const evo = async () => { const el = $('#evo'); if (!el || !$('#evg')) return; el.innerHTML = cargando(); try { el.innerHTML = evolucionHTML(await rpc('evolucion_grupo', { p_grupo: $('#evg').value })); } catch (e) { el.innerHTML = `<div class="alert a-warn">${ic('i-warn')}<div><b>No se pudo cargar la evolución</b>${esc(errorMsg(e))}</div></div>`; } };
+  evo();
+  main.onchange = e => { if (e.target.id === 'evg') evo(); };
   main.onclick = e => { const b = e.target.closest('[data-rep]'); if (b) go('reportes/' + b.dataset.rep); };
 }

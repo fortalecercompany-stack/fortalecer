@@ -162,7 +162,7 @@ window.addEventListener('hashchange', router);
 // ---------- Arranque ----------
 export async function arrancar() {
   if (!configurado) {
-    main().innerHTML = `<div class="card" style="max-width:640px;margin:30px auto"><div class="alert a-warn">${ic('i-warn')}<div><b>Falta conectar la base de datos</b>Abra el archivo <code>config.js</code> y pegue la dirección y la llave pública de su proyecto de Supabase (paso 6 de la guía).</div></div></div>`;
+    main().innerHTML = `<div class="card" style="max-width:640px;margin:30px auto"><div class="alert a-warn">${ic('i-warn')}<div><b>Falta conectar la base de datos</b>Abra el archivo <code>config.js</code> y pegue la dirección y la llave pública de su proyecto de Supabase (vea la guía de instalación).</div></div></div>`;
     return;
   }
   const { data: { session } } = await sb.auth.getSession();
@@ -172,7 +172,7 @@ export async function arrancar() {
   main().innerHTML = `<div class="card" style="place-items:center;padding:48px;margin-top:20px"><div class="spin"></div><span class="muted small">Cargando…</span></div>`;
   let ses;
   try { ses = await rpc('mi_sesion'); } catch (e) { return pantallaMensaje('i-offline', 'No hay conexión', esc(errorMsg(e))); }
-  if (!ses || !ses.perfil) return pantallaMensaje('i-warn', 'Su usuario no tiene perfil', 'La cuenta existe, pero no está registrada en FORTALECER. Si es el administrador, ejecute el archivo <b>03_primer_administrador.sql</b> (paso 7 de la guía).');
+  if (!ses || !ses.perfil) return pantallaMensaje('i-warn', 'Su usuario no tiene perfil', 'La cuenta existe, pero no está registrada en FORTALECER. Si es el administrador, ejecute el archivo <b>03_primer_administrador.sql</b> (vea la guía de instalación).');
   S.perfil = ses.perfil; S.colegio = ses.colegio; S.grupo = ses.grupo;
   if (!S.perfil.activo) return pantallaMensaje('i-exit', 'Su cuenta está desactivada', 'Comuníquese con la coordinación de su colegio.');
   if (S.colegio && !S.colegio.activo) return pantallaMensaje('i-school', 'El acceso de su colegio está suspendido', 'La información se conserva. Comuníquese con el administrador de FORTALECER.');

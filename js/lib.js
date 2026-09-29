@@ -39,7 +39,7 @@ export const errorMsg = e => {
   const m = String(e?.message || e || 'Ocurrió un error');
   if (/Failed to fetch|NetworkError|network/i.test(m)) return 'No hay conexión con el servidor. Revise el internet e intente de nuevo.';
   if (/JWT|jwt expired/i.test(m)) return 'Su sesión venció. Vuelva a ingresar.';
-  if (/row-level security|permission denied/i.test(m)) return 'No tiene permiso para hacer esto.';
+  if (/row-level security|permission denied/i.test(m)) return `No tiene permiso para hacer esto. (Detalle: ${m})`;
   if (/duplicate key/i.test(m)) return 'Ese registro ya existe.';
   return m;
 };

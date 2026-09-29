@@ -1,6 +1,7 @@
 // FORTALECER · pantallas del estudiante
 import { $, $$, esc, ic, AREAS, SHORT, AICON, col, soft, aico, chip, toast, errorMsg, modal, cerrarModal, confirmar, head, cargando, vacio, corp, rings5, lvlTag, nivel, nivelNombre, fechaHora, hora, fecha, barra, iniciales } from './lib.js';
 import { sb, rpc } from './api.js';
+import { avisosHTML } from './avisos.js';
 
 export async function render(ctx) {
   const { seccion } = ctx;
@@ -14,7 +15,7 @@ const ESTADO = { proxima: ['Próximo', 'p-info'], abierta: ['Abierto', 'p-ok'], 
 
 async function inicio({ S, main, go }) {
   main.innerHTML = cargando();
-  const [apl, res] = await Promise.all([rpc('mis_aplicaciones'), rpc('mis_resultados').catch(() => [])]);
+  const [apl, res, avHTML] = await Promise.all([rpc('mis_aplicaciones'), rpc('mis_resultados').catch(() => []), avisosHTML({ S })]);
   const abierta = apl.find(a => a.estado === 'abierta');
   const proxima = apl.filter(a => a.estado === 'proxima').sort((a, b) => new Date(a.inicio) - new Date(b.inicio))[0];
   const ult = res[0];
@@ -34,6 +35,7 @@ async function inicio({ S, main, go }) {
     <div class="card w7"><div><span class="lbl">Mis simulacros</span><h2>Programados para mi grupo</h2></div><div>${lista}</div></div>
     <div class="card w5"><div class="row between"><div><span class="lbl">Mi último resultado</span><h2>${ult ? esc(ult.simulacro) : 'Aún sin resultados'}</h2></div>${ult ? `<button class="btn sec sm" type="button" data-ir="resultados">Ver</button>` : ''}</div>
       ${ult ? ult.areas.map(x => `<div style="display:grid;grid-template-columns:110px minmax(0,1fr) 34px;gap:10px;align-items:center"><span class="row" style="gap:8px;flex-wrap:nowrap">${aico(x.area, 26)}<b class="small">${SHORT[x.area]}</b></span>${barra(x.puntaje, col(x.area))}<b class="num" style="text-align:right">${x.puntaje}</b></div>`).join('') : '<p class="small muted">Verá su puntaje cuando termine el tiempo de su primer simulacro.</p>'}</div>
+    ${avHTML}
   </div>${corp}`;
   main.onclick = e => { const b = e.target.closest('[data-examen]'); if (b) go('examen/' + b.dataset.examen); };
 }
@@ -58,10 +60,10 @@ async function examen({ S, main, params, go }) {
     if (cache && /conexión|fetch|network/i.test(errorMsg(e))) { datos = cache; toast('Sin conexión: se abrió la copia guardada en este equipo.'); }
     else { document.body.classList.remove('focus'); main.innerHTML = `<div class="card" style="max-width:600px;margin:20px auto"><div class="alert a-warn">${ic('i-warn')}<div><b>No se puede abrir el simulacro</b>${esc(errorMsg(e))}</div></div><button class="btn sec" type="button" data-ir="inicio">Volver al inicio</button></div>`; return; }
   }
-  const kR = 'f-resp-' + datos.intento, kP = 'f-pend-' + datos.intento, kF = 'f-flag-' + datos.intento, kE = 'f-entrega-' + datos.intento;
+  const kR = 'f-resp-' + datos.intento, kP = 'f-pend-' + datos.intento, kF = 'f-flag-' + datos.intento, kE = 'f-entrega-' + datos.intento, kS = 'f-sal-' + datos.intento;
   const local = LS.get(kR, {});
   EX = {
-    apl, S, go, main, datos, kR, kP, kF, kE,
+    apl, S, go, main, datos, kR, kP, kF, kE, kS, salidas: LS.get(kS, 0), salidasEnviadas: 0,
     resp: { ...(datos.respuestas || {}), ...local },
     pend: LS.get(kP, {}), flags: LS.get(kF, {}),
     i: 0, offset: datos.ahora ? new Date(datos.ahora) - Date.now() : 0,
@@ -83,7 +85,19 @@ function tic() {
   if (s <= 0 && !EX.entregado) { toast('Se terminó el tiempo. Su simulacro se entregó con las respuestas que tenía.'); entregar(true); }
   else if (s === 600) toast('Quedan 10 minutos.');
 }
+function enviarSalidas() {
+  if (!EX || EX.salidas <= EX.salidasEnviadas) return;
+  const n = EX.salidas;
+  rpc('registrar_salidas', { p_intento: EX.datos.intento, p_total: n }).then(() => { EX.salidasEnviadas = Math.max(EX.salidasEnviadas, n); }).catch(() => { });
+}
+// Cada vez que el estudiante sale de la ventana del simulacro (otra pestaña, otra aplicación, minimizar) queda registrado.
+document.addEventListener('visibilitychange', () => {
+  if (!EX || EX.entregado || !document.body.classList.contains('focus')) return;
+  if (document.hidden) { EX.salidas++; LS.set(EX.kS, EX.salidas); EX.salio = true; }
+  else if (EX.salio) { EX.salio = false; toast(`Salió de la ventana del simulacro (${EX.salidas} ${EX.salidas === 1 ? 'vez' : 'veces'}). Esto queda registrado para la coordinación.`, 'error'); enviarSalidas(); }
+});
 async function sincronizar(entregar) {
+  enviarSalidas();
   const pend = { ...EX.pend };
   if (!Object.keys(pend).length && !entregar) return true;
   try {
@@ -136,7 +150,7 @@ function pintarExamen() {
         ${ctx}${fig}<div class="stem"><p>${esc(q.enunciado || '').replace(/\n/g, '<br>')}</p></div>
         <div class="opts" role="radiogroup" aria-label="Opciones">${opts}</div>
       </article>
-      <p class="xs muted">Preguntas del ICFES (Evaluar para Avanzar). Puede usar las teclas A, B, C, D y las flechas del teclado.</p>
+      <p class="xs muted">Preguntas del ICFES (Evaluar para Avanzar). Puede usar las teclas A, B, C, D y las flechas del teclado. No salga de esta ventana mientras presenta el simulacro: cada salida queda registrada.</p>
     </div>
     <aside class="qnav card"><div class="row between"><h3>Mapa del simulacro</h3><span class="xs muted num">${answered} de ${total}</span></div>${bloques}</aside>
   </div>
@@ -181,7 +195,7 @@ async function entregar(porTiempo) {
   EX.entregado = true; LS.set(EX.kE, true);
   clearInterval(reloj);
   const ok = await sincronizar(true);
-  if (ok) { LS.del(EX.kR); LS.del(EX.kP); LS.del(EX.kF); LS.del('f-ex-' + EX.apl); }
+  if (ok) { LS.del(EX.kR); LS.del(EX.kP); LS.del(EX.kF); LS.del(EX.kS); LS.del('f-ex-' + EX.apl); }
   pintarExamen();
 }
 

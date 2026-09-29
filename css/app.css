@@ -161,8 +161,8 @@ td.r,th.r{text-align:right}
 .legend i{width:12px;height:12px;border-radius:4px;display:inline-block}
 .field{display:grid;gap:6px}
 .field label{font:700 13.5px var(--sans)}
-.field input,.field select{border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--surface-2);min-width:0;width:100%}
-.field input:focus,.field select:focus{border-color:var(--brand);outline:none;background:var(--surface)}
+.field input,.field select,.field textarea{border:1.5px solid var(--line);border-radius:14px;padding:12px 14px;background:var(--surface-2);min-width:0;width:100%}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--brand);outline:none;background:var(--surface)}
 .hint{font-size:12.5px;color:var(--muted)}
 .toast{position:fixed;left:50%;bottom:calc(96px + env(safe-area-inset-bottom,0px));transform:translateX(-50%);background:var(--ink);color:var(--bg);padding:12px 18px;border-radius:14px;font:700 14px var(--sans);z-index:70;max-width:calc(100% - 32px);box-shadow:var(--shadow-lg)}
 .sugg{display:grid;gap:6px}
@@ -478,3 +478,18 @@ button.av{font:800 13px var(--sans)}
   #printbox .paper{box-shadow:none;max-width:none;border-radius:0;padding:0;page-break-after:always;break-after:page}
   #printbox .paper:last-child{page-break-after:auto;break-after:auto}
 }
+
+/* ---------- v1.1: avisos, listas de seguimiento, evolución, salidas ---------- */
+.avlist{display:grid;gap:10px}
+.aviso{border:1px solid var(--line);border-left:4px solid var(--brand);border-radius:12px;padding:12px 14px;background:var(--surface-2)}
+.aviso b{display:block;margin-bottom:2px}
+ol.mini{margin:0;padding-left:20px;display:grid;gap:6px}
+ol.mini li{padding-block:2px}
+ol.mini li>span:first-child{font-weight:600;margin-right:6px}
+ol.mini li{font-size:14px}
+ol.mini li b{float:right}
+svg.evo{width:100%;min-width:420px;height:auto;display:block}
+.seat{position:relative}
+.seat .sal{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;border-radius:9px;background:var(--warn);color:var(--surface);font:800 10px/18px var(--sans, sans-serif);padding-inline:4px;box-shadow:0 0 0 2px var(--surface)}
+.field textarea{font:inherit;color:var(--ink);resize:vertical}
+#evg{border:1.5px solid var(--line);border-radius:12px;padding:8px 12px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:14px}

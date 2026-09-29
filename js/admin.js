@@ -1,7 +1,8 @@
 // FORTALECER · pantallas del administrador (y de soporte, en modo consulta)
-import { $, $$, esc, ic, AREAS, SHORT, col, soft, aico, chip, toast, errorMsg, modal, cerrarModal, confirmar, head, kpi, cargando, vacio, corp, field, selectField, fecha, fechaHora, pill, iniciales, escudo, heat, lvLegend, barra, descargarExcel, normal, num } from './lib.js';
+import { $, $$, esc, ic, AREAS, SHORT, col, soft, aico, chip, toast, errorMsg, modal, cerrarModal, confirmar, head, kpi, cargando, vacio, corp, field, selectField, fecha, fechaHora, pill, iniciales, escudo, heat, lvLegend, barra, descargarExcel, leerExcel, normal, num } from './lib.js';
 import { sb, q, rpc, usuarios, subirArchivo } from './api.js';
 import { reporteAplicacion, listaAplicaciones } from './reportes.js';
+import { avisosHTML, conectarAvisos } from './avisos.js';
 
 let ADMIN = false;
 export async function render(ctx) {
@@ -25,9 +26,9 @@ function credenciales(lista, titulo) {
 }
 
 // ---------- Inicio ----------
-async function inicio({ S, main }) {
+async function inicio({ S, main, recargar }) {
   main.innerHTML = cargando();
-  const r = await rpc('resumen_admin');
+  const [r, avHTML, cols] = await Promise.all([rpc('resumen_admin'), avisosHTML({ S, gestionar: ADMIN }), ADMIN ? q(sb.from('colegios').select('id,nombre').order('nombre')) : []]);
   const pr = r.preguntas || {};
   const minArea = Math.min(...r.por_area.map(a => a.listas));
   main.innerHTML = `<div class="bento">
@@ -44,7 +45,9 @@ async function inicio({ S, main }) {
       <div class="alert a-info">${ic('i-users')}<div><b>${r.coordinadores} coordinadores · ${r.docentes} docentes</b></div></div></div>
     <div class="card w12"><div><span class="lbl">Registro de actividad</span><h2>Quién hizo qué</h2></div>
       ${r.actividad.length ? `<div class="log">${r.actividad.map(l => `<div class="logi"><span class="aico" style="width:36px;height:36px;background:var(--surface-2);color:var(--brand)">${ic('i-sync', 17)}</span><div><span class="small"><b>${esc(l.usuario)}</b> ${esc(l.accion)}${l.detalle ? ` · ${esc(l.detalle)}` : ''}</span><div class="xs muted">${fechaHora(l.creado_en)}</div></div></div>`).join('')}</div>` : vacio('i-sync', 'Sin actividad todavía')}</div>
+    ${avHTML}
   </div>${corp}`;
+  conectarAvisos(main, { S, colegios: cols, alCambiar: recargar });
 }
 
 // ---------- Colegios ----------
@@ -100,9 +103,10 @@ function asistenteColegio(c, gruposActuales, alTerminar) {
         const datos = { nombre: d.nombre, dane: d.dane || null, municipio: d.municipio, departamento: d.departamento, sede: d.sede, escudo_url: url };
         let colegio;
         if (c) colegio = (await q(sb.from('colegios').update(datos).eq('id', c.id).select().single()));
-        else colegio = await q(sb.from('colegios').insert(datos).select().single());
+        else if (d.creado) colegio = d.creado; // reintento: el colegio ya quedó guardado
+        else { colegio = await q(sb.from('colegios').insert(datos).select().single()); d.creado = colegio; }
         const nuevos = [9, 10, 11].flatMap(k => d.grados[k].filter(x => !x.id).map(x => ({ colegio_id: colegio.id, grado: k, nombre: x.nombre })));
-        if (nuevos.length) await q(sb.from('grupos').insert(nuevos));
+        if (nuevos.length && !d.gruposListos) { await q(sb.from('grupos').insert(nuevos)); if (!c) d.gruposListos = true; }
         for (const id of borrados) { const { error } = await sb.from('grupos').delete().eq('id', id); if (error) toast('Un grupo con estudiantes no se pudo quitar.', 'error'); }
         let cred = null;
         if (!c) cred = await usuarios({ accion: 'crear', persona: { rol: 'coordinador', nombres: d.cn, apellidos: d.ca, email: d.ce, documento: d.cd.replace(/\D/g, ''), colegio_id: colegio.id } });
@@ -130,7 +134,7 @@ async function colegioDetalle({ S, main, params, go, recargar }) {
       <div class="card w6"><div><span class="lbl">Grados y grupos</span><h2>${grupos.length} grupos</h2></div><div class="tw"><table><thead><tr><th>Grupo</th><th class="r">Estudiantes</th><th class="r">Sin autorización</th></tr></thead><tbody>${grupos.map(g => `<tr><td><b>${esc(grupoTxt(g))}</b></td><td class="r num">${est.filter(e => e.grupo_id === g.id).length}</td><td class="r num">${est.filter(e => e.grupo_id === g.id && !e.autorizacion_acudiente).length}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">Sin grupos</td></tr>`}</tbody></table></div></div>
       <div class="card w6"><div class="row between"><div><span class="lbl">Coordinación</span><h2>${coords.length} coordinador(es)</h2></div>${ADMIN ? `<button class="btn sec sm" type="button" data-coord>+ Agregar</button>` : ''}</div>
         ${coords.map(p => `<div class="row" style="gap:10px;flex-wrap:nowrap"><span class="av" style="width:36px;height:36px;font-size:12px;border-radius:11px">${esc(iniciales(p.nombres + ' ' + p.apellidos))}</span><div style="flex:1"><b class="small">${esc(p.nombres)} ${esc(p.apellidos)}</b><div class="xs muted">${esc(p.email)}${p.activo ? '' : ' · inactivo'}</div></div><button class="ibtn" type="button" data-reset="${p.id}" title="Restablecer contraseña">${ic('i-key', 16)}</button></div>`).join('') || '<p class="muted small">Sin coordinador.</p>'}</div>
-      <div class="card w12"><div><span class="lbl">Simulacros del colegio</span><h2>Programados y aplicados</h2></div>${listaAplicaciones(apls, grupos)}</div>
+      <div class="card w12"><div><span class="lbl">Simulacros del colegio</span><h2>Programados y aplicados</h2></div>${listaAplicaciones(apls, grupos, { avance: true })}</div>
     </div>${corp}`;
   main.onclick = async e => {
     const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
@@ -151,18 +155,19 @@ async function preguntas({ main, recargar }) {
   main.innerHTML = cargando();
   const [{ count: total }, res] = await Promise.all([q(sb.from('preguntas').select('id', { count: 'exact', head: true })), rpc('resumen_admin')]);
   if (!total) {
-    main.innerHTML = `${head('Banco de preguntas', 'Preguntas')}<div class="card">${vacio('i-bank', 'El banco está vacío', 'Cargue las 1.238 preguntas de los cuadernillos ICFES 2021, 2022 y 2023 con un clic. Tarda cerca de un minuto.', ADMIN ? `<button class="btn hot" type="button" id="importar">${ic('i-upload')}Cargar banco inicial</button>` : '')}<p id="impmsg" class="small muted" style="text-align:center"></p></div>${corp}`;
+    main.innerHTML = `${head('Banco de preguntas', 'Preguntas')}<div class="card">${vacio('i-bank', 'El banco está vacío', 'Cargue las 1.238 preguntas de los cuadernillos ICFES 2021, 2022 y 2023 con un clic. Tarda cerca de un minuto.', ADMIN ? `<div class="row" style="justify-content:center"><button class="btn hot" type="button" id="importar">${ic('i-upload')}Cargar banco inicial</button><button class="btn sec" type="button" id="impxls">${ic('i-upload')}Cargar desde Excel</button></div>` : '')}<p id="impmsg" class="small muted" style="text-align:center"></p></div>${corp}`;
     const bt = $('#importar'); if (bt) bt.onclick = () => importarBanco(bt, recargar);
+    const bx = $('#impxls'); if (bx) bx.onclick = () => cargarPreguntasExcel(recargar);
     return;
   }
   const per = 15;
   const tiles = res.por_area.map(a => `<button type="button" class="acard" style="--ac-soft:${soft(a.area)};text-align:left;cursor:pointer" data-fa="${a.area}"><div class="top2">${aico(a.area, 36)}${a.revisar ? pill(a.revisar + ' por revisar', 'p-warn') : pill('al día', 'p-ok')}</div><div class="xs muted" style="font-weight:800">${AREAS[a.area]}</div><div class="row" style="gap:8px;align-items:baseline"><span class="sc" style="color:${col(a.area)};font-size:28px">${a.listas}</span><span class="xs muted">listas de 500</span></div>${barra(a.listas, col(a.area), 500)}</button>`).join('');
-  main.innerHTML = `${head(`${num(total)} preguntas en total`, 'Banco de preguntas', ADMIN ? `<div class="row"><button class="btn sec" type="button" data-exportar>${ic('i-down', 16)}Exportar</button><button class="btn pri" type="button" data-nueva>+ Nueva pregunta</button></div>` : '')}
+  main.innerHTML = `${head(`${num(total)} preguntas en total`, 'Banco de preguntas', ADMIN ? `<div class="row"><button class="btn sec" type="button" data-exportar>${ic('i-down', 16)}Exportar</button><button class="btn sec" type="button" data-excel>${ic('i-upload', 16)}Cargar desde Excel</button><button class="btn pri" type="button" data-nueva>+ Nueva pregunta</button></div>` : '')}
     <div class="grid g5">${tiles}</div>
     <div class="card"><div class="filters"><div class="sfield">${ic('i-search', 18)}<input id="fq" placeholder="Buscar por texto, ID o código ICFES" value="${esc(PF.q)}"></div>
       <select id="fa" aria-label="Área"><option value="">Todas las áreas</option>${AREAS.map((a, i) => `<option value="${i}" ${PF.a === String(i) ? 'selected' : ''}>${a}</option>`).join('')}</select>
       <select id="fg" aria-label="Grado"><option value="">Todos los grados</option>${[9, 10, 11].map(g => `<option ${PF.g === String(g) ? 'selected' : ''}>${g}</option>`).join('')}</select>
-      <select id="fy" aria-label="Año"><option value="">Todos los años</option>${[2023, 2022, 2021].map(g => `<option ${PF.y === String(g) ? 'selected' : ''}>${g}</option>`).join('')}</select>
+      <select id="fy" aria-label="Año"><option value="">Todos los años</option>${ANIOS.map(g => `<option ${PF.y === String(g) ? 'selected' : ''}>${g}</option>`).join('')}</select>
       <select id="fe" aria-label="Estado"><option value="">Todos los estados</option>${ESTADOS.map(e => `<option ${PF.e === e ? 'selected' : ''}>${e}</option>`).join('')}</select></div>
       <div class="row between"><span class="small" id="pcount"></span><span class="xs muted" id="ppag"></span></div>
       <div class="tw"><table class="qtable"><thead><tr><th>ID</th><th>Área</th><th>Grado · año</th><th>Pregunta</th><th style="text-align:center">Clave</th><th>Estado</th><th class="r">Acciones</th></tr></thead><tbody id="ptb"><tr><td colspan="7">${cargando()}</td></tr></tbody></table></div>
@@ -196,8 +201,105 @@ async function preguntas({ main, recargar }) {
     if ('nueva' in d) editarPregunta(null, cargar);
     if (d.borrar) borrarPregunta(d.borrar, cargar);
     if ('exportar' in d) exportarBanco(b);
+    if ('excel' in d) cargarPreguntasExcel(recargar);
   };
 }
+const ANIOS = Array.from({ length: new Date().getFullYear() - 2013 }, (_, i) => new Date().getFullYear() - i);
+
+// ---------- Carga masiva de preguntas desde Excel ----------
+const COLS_P = ['ID', 'Área', 'Grado', 'Año', 'Código ICFES', 'Estado', 'Competencia', 'Afirmación', 'Contexto', 'Enunciado', 'A', 'B', 'C', 'D', 'E', 'F', 'G', 'H', 'Clave', 'Justificación'];
+function areaDe(v) {
+  const t = normal(v);
+  if (!t) return null;
+  if (t.includes('lectura') || /^(lc|lec|critica)/.test(t)) return 0;
+  if (/^(ma|mat)/.test(t)) return 1;
+  if (/^(sc|soc|ciudad)/.test(t)) return 2;
+  if (/^(cn|cien|nat|bio|fis|quim)/.test(t)) return 3;
+  if (/^(in|ing|engl)/.test(t)) return 4;
+  return null;
+}
+function plantillaPreguntas() {
+  descargarExcel('Plantilla preguntas FORTALECER', {
+    Preguntas: [COLS_P,
+      ['', 'Matemáticas', 11, 2024, 'MAT-2024-01', 'Lista', 'Formulación y ejecución', '', 'Un bus sale cada 15 minutos de la terminal.', '¿Cuántos buses salen en 3 horas?', '10', '12', '15', '20', '', '', '', '', 'B', '3 horas son 180 minutos y 180 ÷ 15 = 12.'],
+      ['', 'Inglés', 11, 2024, '', 'Por revisar', 'Parte 2', '', '', 'Where can you buy medicine?', 'pharmacy', 'library', 'stadium', '', '', '', '', '', 'A', '']],
+    Instrucciones: [['Cómo llenar la plantilla'],
+      ['Una fila por pregunta. No cambie los títulos de la primera fila. Borre las dos filas de ejemplo.'],
+      ['ID: déjelo vacío para preguntas nuevas (el sistema lo crea). Si escribe un ID que ya existe, puede actualizar esa pregunta.'],
+      ['Área (obligatoria): Lectura Crítica, Matemáticas, Sociales, Ciencias Naturales o Inglés.'],
+      ['Contexto: texto, tabla o situación que comparten varias preguntas (opcional).'],
+      ['Enunciado (obligatorio): la pregunta.'],
+      ['A a H: las opciones. Mínimo 2. Normalmente A a D (Inglés puede usar solo A a C, o hasta H en emparejamiento).'],
+      ['Clave (obligatoria): la letra de la respuesta correcta, por ejemplo B.'],
+      ['Estado: Lista o Por revisar. Si lo deja vacío queda «Lista».'],
+      ['Imágenes: después de cargar, abra la pregunta con el lápiz (Editar) y suba la figura.'],
+      ['Consejo: el botón «Exportar» descarga el banco con estas mismas columnas; puede corregir ahí y volver a cargarlo.']]
+  });
+}
+function cargarPreguntasExcel(recargar) {
+  let filas = [];
+  modal({ icon: 'i-upload', tono: 'ok', titulo: 'Cargar preguntas desde Excel', sub: 'Muchas preguntas a la vez', ancho: true,
+    cuerpo: `<div class="field"><label for="pxf">Archivo de Excel</label><input id="pxf" type="file" accept=".xlsx,.xls,.csv"></div>
+      <div style="display:grid;gap:6px"><span class="lbl">Columnas (la primera fila son los títulos)</span><div class="row" style="gap:6px;flex-wrap:wrap">${COLS_P.map(c => `<span class="colchip">${c}</span>`).join('')}</div>
+      <p class="xs muted">Obligatorias: Área, Enunciado, al menos dos opciones y Clave. Las demás son opcionales. Es el mismo formato del botón «Exportar».</p></div>
+      <button class="btn ghost sm" type="button" id="pplant" style="justify-self:start;color:var(--brand)">${ic('i-down', 15)}Descargar plantilla con ejemplos</button>
+      <label class="switch"><input type="checkbox" id="pact"> Si el ID ya existe, actualizar esa pregunta (si no se marca, se omite)</label>
+      <div id="pprev"></div>`,
+    pie: `<button class="btn sec" type="button" data-cerrar>Cancelar</button><button class="btn pri" type="button" id="pgo" disabled>Cargar</button>` });
+  $('#pplant').onclick = plantillaPreguntas;
+  $('#pxf').onchange = async ev => {
+    const f = ev.target.files[0]; if (!f) return;
+    try {
+      const raw = (await leerExcel(f)).filter(r => r.some(c => String(c).trim()));
+      if (raw.length < 2) throw new Error('El archivo no tiene filas de preguntas debajo de los títulos.');
+      const tit = raw[0].map(normal);
+      const pos = n => tit.indexOf(normal(n));
+      const falta = ['Área', 'Enunciado', 'Clave'].filter(n => pos(n) < 0);
+      if (falta.length) throw new Error(`Faltan estas columnas en la primera fila: ${falta.join(', ')}. Use la plantilla.`);
+      const val = (r, n) => { const i = pos(n); return i < 0 ? '' : String(r[i] ?? '').trim(); };
+      const vistos = new Set(); const sello = Date.now().toString(36).toUpperCase();
+      filas = raw.slice(1).map((r, i) => {
+        const area = areaDe(val(r, 'Área'));
+        const opciones = {}; 'ABCDEFGH'.split('').forEach(L => { const t = val(r, L); if (t) opciones[L] = t; });
+        const clave = val(r, 'Clave').toUpperCase().replace(/[^A-H]/g, '').slice(0, 1);
+        const est = val(r, 'Estado');
+        const estado = /revis/i.test(est) ? 'Por revisar' : /retir/i.test(est) ? 'Retirada' : /repet/i.test(est) ? 'Repetida' : 'Lista';
+        const grado = parseInt(val(r, 'Grado')) || null, anio = parseInt(val(r, 'Año')) || null;
+        let id = val(r, 'ID').replace(/\s+/g, '-');
+        const enun = val(r, 'Enunciado'), ctx = val(r, 'Contexto');
+        let err = area === null ? 'Área no reconocida' : !enun && !ctx ? 'Falta el enunciado' : Object.keys(opciones).length < 2 ? 'Faltan opciones (mínimo 2)' : !clave ? 'Falta la clave' : !opciones[clave] ? `La clave ${clave} no tiene opción escrita` : grado && ![9, 10, 11].includes(grado) ? 'Grado debe ser 9, 10 u 11' : '';
+        if (!id && area !== null) id = `FOR-${['LEC', 'MAT', 'SOC', 'CIE', 'ING'][area]}-${sello}-${String(i + 1).padStart(3, '0')}`;
+        if (!err && vistos.has(id)) err = 'ID repetido en el archivo';
+        vistos.add(id);
+        return { fila: i + 2, err, clave, p: { id, area, grado, anio, codigo_icfes: val(r, 'Código ICFES') || null, estado, competencia: val(r, 'Competencia') || null, afirmacion: val(r, 'Afirmación') || null, contexto: ctx || null, enunciado: enun || null, opciones, justificacion: val(r, 'Justificación') || null } };
+      });
+      const buenas = filas.filter(x => !x.err);
+      const ids = buenas.map(x => x.p.id); const existen = new Set();
+      for (let i = 0; i < ids.length; i += 200) (await q(sb.from('preguntas').select('id').in('id', ids.slice(i, i + 200)))).forEach(x => existen.add(x.id));
+      filas.forEach(x => { x.existe = existen.has(x.p.id); });
+      const nuevas = buenas.filter(x => !x.existe).length, ya = buenas.length - nuevas, malas = filas.length - buenas.length;
+      $('#pprev').innerHTML = `<div class="alert ${buenas.length ? 'a-ok' : 'a-warn'}">${ic(buenas.length ? 'i-sync' : 'i-warn')}<div><b>${esc(f.name)}: ${nuevas} nuevas${ya ? `, ${ya} ya existen` : ''}${malas ? `, ${malas} con error` : ''}</b>Revise la lista. Las filas con error no se cargan: corríjalas en el Excel y vuelva a subir el archivo.</div></div>
+        <div class="tw" style="max-height:280px;border:1px solid var(--line)"><table><thead><tr><th>Fila</th><th>Área</th><th>Pregunta</th><th>Clave</th><th>Estado</th></tr></thead><tbody>${filas.slice(0, 300).map(x => `<tr><td class="num">${x.fila}</td><td>${x.p.area !== null ? chip(x.p.area) : '—'}</td><td style="max-width:360px"><div class="clamp small">${esc(x.p.enunciado || x.p.contexto || '')}</div></td><td class="num"><b>${esc(x.clave || '—')}</b></td><td>${x.err ? pill(esc(x.err), 'p-warn') : x.existe ? pill('Ya existe', 'p-info') : pill('Nueva', 'p-ok')}</td></tr>`).join('')}</tbody></table></div>`;
+      const pintarBoton = () => { const n = nuevas + ($('#pact').checked ? ya : 0); $('#pgo').disabled = !n; $('#pgo').textContent = n ? `Cargar ${n} preguntas` : 'Cargar'; };
+      $('#pact').onchange = pintarBoton; pintarBoton();
+    } catch (er) { $('#pprev').innerHTML = ''; $('#pgo').disabled = true; toast('No se pudo leer el archivo: ' + errorMsg(er), 'error'); }
+  };
+  $('#pgo').onclick = async () => {
+    const act = $('#pact').checked;
+    const lista = filas.filter(x => !x.err && (act || !x.existe));
+    const btn = $('#pgo'); btn.disabled = true;
+    try {
+      for (let i = 0; i < lista.length; i += 100) {
+        const lote = lista.slice(i, i + 100);
+        await q(sb.from('preguntas').upsert(lote.map(x => ({ ...x.p, actualizado_en: new Date().toISOString() })), { onConflict: 'id' }));
+        await q(sb.from('claves').upsert(lote.map(x => ({ pregunta_id: x.p.id, respuesta: x.clave })), { onConflict: 'pregunta_id' }));
+        btn.textContent = `Cargando… ${Math.min(i + 100, lista.length)} de ${lista.length}`;
+      }
+      cerrarModal(); toast(`${lista.length} preguntas cargadas.`); recargar();
+    } catch (er) { btn.disabled = false; btn.textContent = 'Reintentar'; toast(errorMsg(er), 'error'); }
+  };
+}
+
 async function importarBanco(bt, recargar) {
   bt.disabled = true; const msg = $('#impmsg');
   try {
@@ -220,7 +322,7 @@ async function exportarBanco(b) {
     while (true) { const L = await q(sb.from('preguntas').select('*').order('id').range(i, i + 999)); todo = todo.concat(L); if (L.length < 1000) break; i += 1000; }
     let cl = [], j = 0; while (true) { const L = await q(sb.from('claves').select('*').range(j, j + 999)); cl = cl.concat(L); if (L.length < 1000) break; j += 1000; }
     const k = Object.fromEntries(cl.map(c => [c.pregunta_id, c.respuesta]));
-    descargarExcel('Banco de preguntas FORTALECER', { Preguntas: [['ID', 'Área', 'Grado', 'Año', 'Código ICFES', 'Estado', 'Competencia', 'Contexto', 'Enunciado', 'A', 'B', 'C', 'D', 'Clave', 'Justificación'], ...todo.map(x => [x.id, AREAS[x.area], x.grado, x.anio, x.codigo_icfes, x.estado, x.competencia, x.contexto, x.enunciado, x.opciones?.A, x.opciones?.B, x.opciones?.C, x.opciones?.D, k[x.id], x.justificacion])] });
+    descargarExcel('Banco de preguntas FORTALECER', { Preguntas: [COLS_P, ...todo.map(x => [x.id, AREAS[x.area], x.grado, x.anio, x.codigo_icfes, x.estado, x.competencia, x.afirmacion, x.contexto, x.enunciado, ...'ABCDEFGH'.split('').map(L => x.opciones?.[L] ?? ''), k[x.id], x.justificacion])] });
   } catch (e) { toast(errorMsg(e), 'error'); }
   b.disabled = false;
 }
@@ -321,7 +423,7 @@ async function reportes({ main, params, go }) {
     ${con.length ? `<div class="bento"><div class="card w7"><div class="row between"><div><span class="lbl">Mapa de calor</span><h2>Colegios por área</h2></div>${lvLegend}</div>${heat(con.map(r => r.nombre), SHORT, (i, j) => con[i].areas?.[j] ?? null)}</div>
       <div class="card w5"><div><span class="lbl">Puntaje global promedio</span><h2>Ranking de colegios</h2></div><div class="tw"><table><thead><tr><th></th><th>Colegio</th><th class="r">Pres.</th><th class="r">Global</th></tr></thead><tbody>${[...con].sort((a, b) => b.global - a.global).map((r, i) => `<tr><td class="num"><b>${i + 1}</b></td><td><div class="row" style="gap:8px;flex-wrap:nowrap">${escudo(r.escudo_url, r.nombre, 28)}<span class="small">${esc(r.nombre)}</span></div></td><td class="r num">${r.presentaron}</td><td class="r num"><b>${r.global}</b></td></tr>`).join('')}</tbody></table></div></div></div>`
       : `<div class="card">${vacio('i-results', 'Todavía no hay resultados', 'Cuando los colegios apliquen simulacros, aquí verá la comparación.')}</div>`}
-    <div class="card"><div><span class="lbl">Por colegio y grupo</span><h2>Simulacros aplicados</h2></div>${apls.length ? listaAplicaciones(apls.map(a => ({ ...a })), grupos.map(g => ({ ...g, nombre: g.nombre + ' · ' + (cols.find(c => c.id === g.colegio_id)?.nombre || '') }))) : vacio('i-cal', 'Sin simulacros programados')}</div>${corp}`;
+    <div class="card"><div><span class="lbl">Por colegio y grupo</span><h2>Simulacros aplicados</h2></div>${apls.length ? listaAplicaciones(apls.map(a => ({ ...a })), grupos.map(g => ({ ...g, nombre: g.nombre + ' · ' + (cols.find(c => c.id === g.colegio_id)?.nombre || '') })), { avance: true }) : vacio('i-cal', 'Sin simulacros programados')}</div>${corp}`;
   main.onclick = e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.rep) go('reportes/' + b.dataset.rep); if ('dl' in b.dataset) descargarExcel('Reporte global FORTALECER', { Colegios: [['Colegio', 'Presentaron', ...AREAS, 'Global'], ...con.map(r => [r.nombre, r.presentaron, ...(r.areas || []), r.global])] }); };
 }
 
