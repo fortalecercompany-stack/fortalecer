@@ -41,6 +41,7 @@ async function inicio({ S, main, go }) {
   const proximas = apls.filter(a => new Date(a.inicio) > ahora).sort((a, b) => new Date(a.inicio) - new Date(b.inicio));
   const g = id => grupos.find(x => x.id === id);
   let sel = enCurso[0]?.id;
+  let estVivo = [];
   let avHTML = await avisosHTML({ S, gestionar: true });
   const pintar = async () => {
     let sala = '';
@@ -49,14 +50,14 @@ async function inicio({ S, main, go }) {
       let est = [];
       try { est = await rpc('estado_aplicacion', { p_aplicacion: sel }); } catch (e) { toast(errorMsg(e), 'error'); }
       const cuenta = k => est.filter(e => e.estado === k).length;
-      const cls = { entrego: 's-done', respondiendo: 's-doing', sin_conexion: 's-off', sin_empezar: 's-not', bloqueado: 's-not', termino_tiempo: 's-done' };
-      const txt = { entrego: 'Entregó', respondiendo: 'Respondiendo', sin_conexion: 'Sin conexión', sin_empezar: 'Sin empezar', bloqueado: 'Sin autorización', termino_tiempo: 'Se acabó su tiempo' };
+      const cls = { entrego: 's-done', respondiendo: 's-doing', sin_conexion: 's-off', sin_empezar: 's-not', bloqueado: 's-not', termino_tiempo: 's-done', sospecha: 's-bad' };
+      const txt = { entrego: 'Entregó', respondiendo: 'Respondiendo', sin_conexion: 'Sin conexión', sin_empezar: 'Sin empezar', bloqueado: 'Sin autorización', termino_tiempo: 'Se acabó su tiempo', sospecha: 'Cerrado por sospecha' };
       sala = `<div class="card w8"><div class="row between"><div><span class="lbl">Sala en vivo · se actualiza cada 30 segundos</span><h2>Grupo ${esc(grupoTxt(g(a.grupo_id)))} · Simulacro ${a.simulacro_id}</h2></div>${enCurso.length > 1 ? `<div class="tabs" role="group">${enCurso.map(x => `<button type="button" data-sala="${x.id}" aria-pressed="${x.id === sel}">${esc(grupoTxt(g(x.grupo_id)))}</button>`).join('')}</div>` : ''}</div>
-        ${est.length ? `<div class="room"><div class="board" aria-hidden="true"></div><div class="seats">${est.map(e => `<button type="button" class="seat ${cls[e.estado]}" data-est="${e.estudiante_id}" title="${esc(e.nombre)}: ${txt[e.estado]} · ${e.respondidas} respondidas${e.minutos_extra ? ' · +' + e.minutos_extra + ' min' : ''}${e.salidas ? ' · salió ' + e.salidas + ' veces de la ventana' : ''}">${esc(iniciales(e.nombre))}${e.salidas ? `<span class="sal" aria-label="${e.salidas} salidas">${e.salidas}</span>` : ''}</button>`).join('')}</div></div>` : vacio('i-users', 'Este grupo no tiene estudiantes')}
-        <div class="legend"><span><i class="l4"></i>Entregó (${cuenta('entrego') + cuenta('termino_tiempo')})</span><span><i style="background:var(--a1)"></i>Respondiendo (${cuenta('respondiendo')})</span><span><i class="l2"></i>Sin conexión (${cuenta('sin_conexion')})</span><span><i style="background:var(--sunk)"></i>Sin empezar (${cuenta('sin_empezar')})</span>${cuenta('bloqueado') ? `<span>${cuenta('bloqueado')} sin autorización</span>` : ''}</div>
-        <p class="xs muted">Toque un puesto para ampliar el tiempo o habilitar de nuevo a ese estudiante. El número naranja indica cuántas veces salió de la ventana del simulacro. Termina a las ${hora(finDe(a))}</p>
+        ${est.length ? `<div class="room"><div class="board" aria-hidden="true"></div><div class="seats">${est.map(e => `<button type="button" class="seat ${cls[e.estado]}" data-est="${e.estudiante_id}" title="${esc(e.nombre)}: ${txt[e.estado]} · ${e.respondidas} respondidas${e.minutos_extra ? ' · +' + e.minutos_extra + ' min' : ''}${e.advertencias ? ' · ' + e.advertencias + ' advertencias' : ''}${e.reingresos ? ' · ' + e.reingresos + ' reingresos' : ''}">${esc(iniciales(e.nombre))}${e.advertencias ? `<span class="sal" aria-label="${e.advertencias} advertencias">${e.advertencias}</span>` : ''}</button>`).join('')}</div></div>` : vacio('i-users', 'Este grupo no tiene estudiantes')}
+        <div class="legend"><span><i class="l4"></i>Entregó (${cuenta('entrego') + cuenta('termino_tiempo')})</span><span><i style="background:var(--a1)"></i>Respondiendo (${cuenta('respondiendo')})</span><span><i class="l2"></i>Sin conexión (${cuenta('sin_conexion')})</span><span><i style="background:var(--sunk)"></i>Sin empezar (${cuenta('sin_empezar')})</span>${cuenta('sospecha') ? `<span><i style="background:var(--bad)"></i>Sospecha (${cuenta('sospecha')})</span>` : ''}${cuenta('bloqueado') ? `<span>${cuenta('bloqueado')} sin autorización</span>` : ''}</div>
+        <p class="xs muted">Toque un puesto para ampliar el tiempo o habilitar de nuevo a ese estudiante. El número naranja son las advertencias por salir de la ventana, capturas o copias. En rojo, los simulacros cerrados por sospecha. Termina a las ${hora(finDe(a))}</p>
         <div class="row"><button class="btn sec sm" type="button" data-avance="${a.id}">${ic('i-results', 15)}Ver avance de resultados</button></div></div>`;
-      main.dataset.est = JSON.stringify(est.map(e => [e.estudiante_id, e.nombre, e.estado]));
+      estVivo = est;
     }
     const total = enCurso.length;
     main.innerHTML = `<div class="bento">
@@ -78,14 +79,19 @@ async function inicio({ S, main, go }) {
     const b = e.target.closest('button'); if (!b) return;
     if (b.dataset.sala) { sel = b.dataset.sala; pintar(); }
     if (b.dataset.avance) go('reportes/' + b.dataset.avance);
-    if (b.dataset.est) accionesEstudiante(sel, b.dataset.est, JSON.parse(main.dataset.est || '[]').find(x => x[0] === b.dataset.est), pintar);
+    if (b.dataset.est) accionesEstudiante(sel, b.dataset.est, estVivo.find(x => x.estudiante_id === b.dataset.est), pintar);
   };
 }
 function accionesEstudiante(apl, estId, info, despues) {
-  const w = modal({ icon: 'i-user', titulo: esc(info?.[1] || 'Estudiante'), sub: 'Ajustes para este simulacro', form: true,
-    cuerpo: `${selectField('mins', 'Ampliar tiempo', [[30, '30 minutos'], [60, '1 hora'], [120, '2 horas']], 60, 'Úselo si hubo problemas de luz o de conexión. Conserva sus respuestas.')}
-      ${info?.[2] === 'entrego' ? `<div class="alert a-info">${ic('i-info')}<div><b>Ya entregó</b>Si lo necesita, puede habilitarlo de nuevo para que siga respondiendo.</div></div>` : ''}`,
-    pie: `${info?.[2] === 'entrego' ? `<button class="btn sec" type="button" id="reabrir">Habilitar de nuevo</button>` : ''}<button class="btn sec" type="button" data-cerrar>Cancelar</button><button class="btn pri" type="submit">Ampliar tiempo</button>` });
+  const cerrado = info?.estado === 'entrego' || info?.estado === 'sospecha';
+  const inc = info?.incidentes || [];
+  const w = modal({ icon: info?.sospecha ? 'i-warn' : 'i-user', tono: info?.sospecha ? 'bad' : 'brand', titulo: esc(info?.nombre || 'Estudiante'), sub: 'Seguimiento y ajustes para este simulacro', form: true, ancho: true,
+    cuerpo: `${info?.sospecha ? `<div class="alert a-warn" style="background:var(--bad-soft);color:var(--bad)">${ic('i-warn')}<div><b>Sospecha de fraude</b>${esc(info.motivo || '')}</div></div>` : ''}
+      <div class="grid g3" style="gap:10px"><div class="card kpi" style="box-shadow:none"><div><div class="v">${info?.respondidas ?? 0}</div><div class="d">respondidas</div></div></div><div class="card kpi" style="box-shadow:none"><div><div class="v">${info?.advertencias ?? 0}</div><div class="d">advertencias</div></div></div><div class="card kpi" style="box-shadow:none"><div><div class="v">${info?.reingresos ?? 0}</div><div class="d">reingresos</div></div></div></div>
+      ${inc.length ? `<div style="display:grid;gap:6px"><span class="lbl">Registro de incidentes</span><ol class="inclist">${inc.map(x => `<li><b>${fechaHora(x.hora)}</b> · ${esc(x.tipo)}${x.detalle ? ` (${esc(x.detalle)})` : ''}${x.cuenta ? ' <span class="pill p-warn">advertencia</span>' : ''}</li>`).join('')}</ol></div>` : '<p class="small muted">Sin incidentes registrados.</p>'}
+      ${selectField('mins', 'Ampliar tiempo', [[30, '30 minutos'], [60, '1 hora'], [120, '2 horas']], 60, 'Úselo si hubo problemas de luz o de conexión. Conserva sus respuestas.')}
+      ${cerrado ? `<div class="alert a-info">${ic('i-info')}<div><b>${info?.estado === 'sospecha' ? 'El sistema cerró este simulacro' : 'Ya entregó'}</b>Si lo considera justo, puede habilitarlo de nuevo: conserva sus respuestas y se le reinician las advertencias.</div></div>` : ''}`,
+    pie: `${cerrado ? `<button class="btn sec" type="button" id="reabrir">Habilitar de nuevo</button>` : ''}<button class="btn sec" type="button" data-cerrar>Cerrar</button><button class="btn pri" type="submit">Ampliar tiempo</button>` });
   w.querySelector('form').onsubmit = async e => { e.preventDefault(); try { await rpc('ampliar_tiempo', { p_aplicacion: apl, p_estudiante: estId, p_minutos: +$('#mins').value }); cerrarModal(); toast('Tiempo ampliado.'); despues(); } catch (er) { toast(errorMsg(er), 'error'); } };
   const r = w.querySelector('#reabrir'); if (r) r.onclick = async () => { try { await rpc('reabrir_intento', { p_aplicacion: apl, p_estudiante: estId }); cerrarModal(); toast('Habilitado de nuevo. Si su tiempo ya terminó, amplíelo.'); despues(); } catch (er) { toast(errorMsg(er), 'error'); } };
 }
@@ -274,7 +280,7 @@ async function simulacros({ S, main, recargar }) {
     const fechaV = `${ini.getFullYear()}-${f(ini.getMonth() + 1)}-${f(ini.getDate())}`, horaV = a ? `${f(ini.getHours())}:${f(ini.getMinutes())}` : '07:00';
     return `${a ? '' : selectField('ps', 'Simulacro', sims.map(s => [s.id, s.nombre || 'Simulacro ' + s.id]))}
       <div class="grid g2" style="gap:12px;grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">${field('pf', 'Fecha', fechaV, 'type="date" required')}${field('ph', 'Hora de inicio', horaV, 'type="time" required')}</div>
-      ${selectField('pd', 'Tiempo para responder', durOpts, a ? a.duracion_min : recom, 'Los estudiantes pueden entrar y salir mientras no se acabe el tiempo.')}
+      ${selectField('pd', 'Tiempo para responder', durOpts, a ? a.duracion_min : recom, 'Si se va la luz o el internet, el estudiante puede volver a entrar mientras no se acabe el tiempo. Cada reingreso queda registrado.')}
       ${a ? '' : `<fieldset style="border:0;padding:0;margin:0;display:grid;gap:8px"><legend style="font:700 13.5px var(--sans);margin-bottom:6px">Grupos</legend><div class="row small">${grupos.map(x => `<label class="switch"><input type="checkbox" name="pg" value="${x.id}"> ${esc(grupoTxt(x))}</label>`).join('')}</div></fieldset>`}
       <p class="small muted">Los estudiantes verán su puntaje cuando termine este tiempo.</p>`;
   };

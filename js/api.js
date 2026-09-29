@@ -1,9 +1,21 @@
 // FORTALECER · conexión con la base de datos (Supabase)
 const cfg = window.FORTALECER_CONFIG || {};
 export const configurado = !!(cfg.SUPABASE_URL && cfg.SUPABASE_ANON_KEY && !/PEGUE|xxxx/i.test(cfg.SUPABASE_URL + cfg.SUPABASE_ANON_KEY));
+// Seguridad: la sesión se guarda solo en esta pestaña (sessionStorage).
+// Al cerrar el navegador la sesión se pierde y hay que ingresar de nuevo.
+export const CLAVE_SESION = 'f-sesion';
+const almacen = (() => { try { const x = window.sessionStorage; x.setItem('f-prueba', '1'); x.removeItem('f-prueba'); return x; } catch { return undefined; } })();
+// Borra sesiones que versiones anteriores dejaron guardadas de forma permanente.
+try { Object.keys(localStorage).filter(k => /^sb-.*-auth-token/.test(k)).forEach(k => localStorage.removeItem(k)); } catch { }
 export const sb = configurado ? window.supabase.createClient(cfg.SUPABASE_URL, cfg.SUPABASE_ANON_KEY, {
-  auth: { persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
+  auth: { storage: almacen, storageKey: CLAVE_SESION, persistSession: true, autoRefreshToken: true, detectSessionInUrl: true },
 }) : null;
+export function borrarSesionLocal() {
+  for (const st of [(() => { try { return sessionStorage; } catch { return null; } })(), (() => { try { return localStorage; } catch { return null; } })()]) {
+    if (!st) continue;
+    try { Object.keys(st).filter(k => k.startsWith(CLAVE_SESION) || /^sb-.*-auth-token/.test(k)).forEach(k => st.removeItem(k)); } catch { }
+  }
+}
 export const DOMINIO_ESTUDIANTES = 'estudiantes.fortalecer.app';
 
 // Lanza un error legible si la consulta falla

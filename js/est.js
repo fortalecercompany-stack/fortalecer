@@ -21,7 +21,7 @@ async function inicio({ S, main, go }) {
   const ult = res[0];
   const nombre = esc(S.perfil.nombres.split(' ')[0]);
   const heroTxt = abierta
-    ? `<h1>${nombre}, el ${esc(abierta.nombre)} ya está abierto.</h1><p>125 preguntas de las 5 áreas, en una sola sesión. Tiene hasta las ${hora(abierta.fin)}. Si se va el internet, siga respondiendo: sus respuestas se guardan.</p>
+    ? `<h1>${nombre}, el ${esc(abierta.nombre)} ya está abierto.</h1><p>125 preguntas de las 5 áreas, en una sola sesión. Tiene hasta las ${hora(abierta.fin)}. Antes de empezar verá las reglas del simulacro.</p>
        <div class="row">${S.perfil.autorizacion_acudiente ? `<button class="btn hot" type="button" data-examen="${abierta.id}">${ic('i-exam')}${abierta.respondidas ? 'Continuar simulacro' : 'Empezar simulacro'}</button>` : `<span class="pill p-warn">Falta la autorización del acudiente</span>`}</div>`
     : proxima ? `<h1>${nombre}, su próximo simulacro es el ${fecha(proxima.inicio)}.</h1><p>${esc(proxima.nombre)} · empieza a las ${hora(proxima.inicio)}.</p>`
     : `<h1>Hola, ${nombre}.</h1><p>Por ahora no tiene simulacros abiertos. Cuando la coordinación programe uno, aparecerá aquí.</p>`;
@@ -60,10 +60,10 @@ async function examen({ S, main, params, go }) {
     if (cache && /conexión|fetch|network/i.test(errorMsg(e))) { datos = cache; toast('Sin conexión: se abrió la copia guardada en este equipo.'); }
     else { document.body.classList.remove('focus'); main.innerHTML = `<div class="card" style="max-width:600px;margin:20px auto"><div class="alert a-warn">${ic('i-warn')}<div><b>No se puede abrir el simulacro</b>${esc(errorMsg(e))}</div></div><button class="btn sec" type="button" data-ir="inicio">Volver al inicio</button></div>`; return; }
   }
-  const kR = 'f-resp-' + datos.intento, kP = 'f-pend-' + datos.intento, kF = 'f-flag-' + datos.intento, kE = 'f-entrega-' + datos.intento, kS = 'f-sal-' + datos.intento;
+  const kR = 'f-resp-' + datos.intento, kP = 'f-pend-' + datos.intento, kF = 'f-flag-' + datos.intento, kE = 'f-entrega-' + datos.intento, kI = 'f-inc-' + datos.intento, kA = 'f-adv-' + datos.intento;
   const local = LS.get(kR, {});
   EX = {
-    apl, S, go, main, datos, kR, kP, kF, kE, kS, salidas: LS.get(kS, 0), salidasEnviadas: 0,
+    apl, S, go, main, datos, kR, kP, kF, kE, kI, kA, cola: LS.get(kI, []), adv: Math.max(datos.advertencias || 0, LS.get(kA, 0)), vig: false, fsActivo: false, ultimoInc: 0, offDesde: navigator.onLine ? 0 : Date.now(),
     resp: { ...(datos.respuestas || {}), ...local },
     pend: LS.get(kP, {}), flags: LS.get(kF, {}),
     i: 0, offset: datos.ahora ? new Date(datos.ahora) - Date.now() : 0,
@@ -72,7 +72,7 @@ async function examen({ S, main, params, go }) {
   const primeraSinResp = datos.preguntas.findIndex(p => !EX.resp[p.pos]);
   EX.i = Math.max(0, primeraSinResp);
   if (LS.get(kE, false)) { EX.entregado = true; }
-  pintarExamen();
+  if (EX.entregado) pintarExamen(); else pintarReglas(datos.reingresos > 0 || Object.keys(EX.resp).length > 0);
   reloj = setInterval(tic, 1000);
   sincro = setInterval(() => sincronizar(false), 30000);
   sincronizar(false);
@@ -85,27 +85,109 @@ function tic() {
   if (s <= 0 && !EX.entregado) { toast('Se terminó el tiempo. Su simulacro se entregó con las respuestas que tenía.'); entregar(true); }
   else if (s === 600) toast('Quedan 10 minutos.');
 }
-function enviarSalidas() {
-  if (!EX || EX.salidas <= EX.salidasEnviadas) return;
-  const n = EX.salidas;
-  rpc('registrar_salidas', { p_intento: EX.datos.intento, p_total: n }).then(() => { EX.salidasEnviadas = Math.max(EX.salidasEnviadas, n); }).catch(() => { });
+// ---------- Seguridad del simulacro ----------
+// Incidentes que cuentan como advertencia: salir de la ventana, salir de pantalla completa,
+// captura de pantalla, copiar e imprimir. A la segunda advertencia el simulacro se cierra.
+const LIMITE_ADV = 2;
+const vigilando = () => EX && EX.vig && !EX.entregado && document.body.classList.contains('focus');
+function incidente(tipo, detalle = null, cuenta = true) {
+  if (!EX || EX.entregado) return;
+  if (cuenta) {
+    if (!vigilando()) return;
+    const t = Date.now(); if (t - EX.ultimoInc < 2500) return; // un mismo gesto dispara varios eventos
+    EX.ultimoInc = t;
+    EX.adv++; LS.set(EX.kA, EX.adv);
+  }
+  EX.cola.push({ p_intento: EX.datos.intento, p_tipo: tipo, p_detalle: detalle, p_cuenta: cuenta }); LS.set(EX.kI, EX.cola);
+  if (!cuenta) { sincronizar(false); return; }
+  if (EX.adv >= LIMITE_ADV) return cerrarPorSospecha(tipo);
+  mostrarAdvertencia(tipo);
+  sincronizar(false);
 }
-// Cada vez que el estudiante sale de la ventana del simulacro (otra pestaña, otra aplicación, minimizar) queda registrado.
-document.addEventListener('visibilitychange', () => {
-  if (!EX || EX.entregado || !document.body.classList.contains('focus')) return;
-  if (document.hidden) { EX.salidas++; LS.set(EX.kS, EX.salidas); EX.salio = true; }
-  else if (EX.salio) { EX.salio = false; toast(`Salió de la ventana del simulacro (${EX.salidas} ${EX.salidas === 1 ? 'vez' : 'veces'}). Esto queda registrado para la coordinación.`, 'error'); enviarSalidas(); }
-});
-async function sincronizar(entregar) {
-  enviarSalidas();
+const TXT_INC = { salida: 'Salió de la ventana del simulacro', pantalla_completa: 'Salió de la pantalla completa', captura: 'Intentó tomar una captura de pantalla', copiar: 'Intentó copiar el contenido', imprimir: 'Intentó imprimir' };
+function mostrarAdvertencia(tipo) {
+  const v = document.createElement('div'); v.className = 'fraude'; v.setAttribute('role', 'alertdialog'); v.setAttribute('aria-modal', 'true');
+  v.innerHTML = `<div class="fraude-in"><span class="fraude-ico">${ic('i-warn', 34)}</span><span class="eyebrow" style="color:var(--bad)">Primera y única advertencia</span>
+    <h2>${TXT_INC[tipo] || 'Acción no permitida'}</h2>
+    <p>Esta acción quedó registrada y la coordinación puede verla. <b>Si vuelve a salir de esta ventana, tomar una captura, copiar o imprimir, el simulacro se cerrará automáticamente y se reportará como sospecha de fraude.</b></p>
+    <button class="btn hot" type="button" id="volverEx">Entiendo, volver al simulacro</button></div>`;
+  document.body.appendChild(v);
+  v.querySelector('#volverEx').onclick = () => { v.remove(); pedirPantallaCompleta(); };
+}
+async function cerrarPorSospecha(tipo) {
+  EX.sospecha = true; EX.motivo = TXT_INC[tipo] || 'Acción no permitida';
+  document.querySelectorAll('.fraude').forEach(x => x.remove());
+  EX.entregado = true; LS.set(EX.kE, true);
+  clearInterval(reloj);
+  salirPantallaCompleta();
+  const ok = await sincronizar(true);
+  if (ok) { LS.del(EX.kR); LS.del(EX.kP); LS.del(EX.kF); LS.del('f-ex-' + EX.apl); }
+  pintarExamen();
+}
+function pedirPantallaCompleta() {
+  const el = document.documentElement;
+  if (!el.requestFullscreen || document.fullscreenElement) { EX.fsActivo = !!document.fullscreenElement; return; }
+  el.requestFullscreen({ navigationUI: 'hide' }).then(() => { EX.fsActivo = true; }).catch(() => { EX.fsActivo = false; });
+}
+function salirPantallaCompleta() { try { if (document.fullscreenElement) document.exitFullscreen(); } catch { } EX && (EX.fsActivo = false); }
+function pintarReglas(reingreso) {
+  const { datos, main } = EX;
+  main.innerHTML = `<div class="reglas card"><div class="row" style="gap:14px;flex-wrap:nowrap"><span class="aico" style="width:56px;height:56px;background:var(--brand-soft);color:var(--brand)">${ic('i-key', 28)}</span><div><span class="lbl">${esc(datos.simulacro)}</span><h2>${reingreso ? 'Está volviendo a entrar al simulacro' : 'Reglas del simulacro'}</h2></div></div>
+    ${reingreso ? `<div class="alert a-warn">${ic('i-warn')}<div><b>Este reingreso quedó registrado.</b>Sus respuestas anteriores se conservan. Las reglas siguen vigentes${EX.adv ? ` y ya tiene ${EX.adv} advertencia` : ''}.</div></div>` : ''}
+    <ol class="reglas-lista">
+      <li><b>Trabaje en esta ventana, en pantalla completa.</b> No abra otras pestañas, programas ni aplicaciones.</li>
+      <li><b>No tome capturas de pantalla, no copie ni imprima</b> las preguntas.</li>
+      <li><b>No use celular, inteligencia artificial ni ayuda de otras personas.</b> Las preguntas llevan su nombre y documento como marca de agua.</li>
+      <li>La primera vez que incumpla una regla recibirá una <b>advertencia</b>. La segunda vez, <b>el simulacro se cerrará solo</b> y se informará a la coordinación como <b>sospecha de fraude</b>.</li>
+      <li>Si se va la luz o el internet, el sistema lo detecta y guarda sus respuestas en este equipo. Cuando vuelva la conexión, se envían solas.</li>
+    </ol>
+    <div class="row"><button class="btn hot" type="button" id="aceptoReglas">${ic('i-exam')}${reingreso ? 'Continuar en pantalla completa' : 'Acepto las reglas. Empezar'}</button><button class="btn ghost" type="button" data-ir="inicio">Ahora no</button></div>
+    <p class="xs muted">Al empezar, la pantalla se pondrá completa. Tiempo disponible: hasta las ${hora(new Date(EX.fin))}.</p></div>`;
+  $('#aceptoReglas').onclick = () => { pedirPantallaCompleta(); EX.vig = true; document.body.classList.add('focus'); pintarExamen(); };
+  document.body.classList.remove('focus');
+}
+// Eventos que vigilan el simulacro
+window.addEventListener('blur', () => { if (vigilando() && !$('.fraude')) setTimeout(() => { if (!document.hasFocus()) incidente('salida'); }, 300); });
+document.addEventListener('visibilitychange', () => { if (document.hidden) incidente('salida'); });
+document.addEventListener('fullscreenchange', () => { if (EX && EX.fsActivo && !document.fullscreenElement) { EX.fsActivo = false; if (vigilando()) incidente('pantalla_completa'); } });
+window.addEventListener('beforeprint', () => incidente('imprimir'));
+['copy', 'cut'].forEach(ev => document.addEventListener(ev, e => { if (!vigilando()) return; e.preventDefault(); incidente('copiar'); }, true));
+['contextmenu', 'dragstart', 'paste'].forEach(ev => document.addEventListener(ev, e => { if (vigilando()) e.preventDefault(); }, true));
+document.addEventListener('keydown', e => {
+  if (!vigilando()) return;
+  const k = (e.key || '').toLowerCase(), mod = e.ctrlKey || e.metaKey;
+  if (k === 'printscreen') { e.preventDefault(); return incidente('captura'); }
+  if (mod && (k === 'c' || k === 'x')) { e.preventDefault(); return incidente('copiar'); }
+  if (mod && k === 'p') { e.preventDefault(); return incidente('imprimir'); }
+  if ((mod && ['s', 'u', 'a'].includes(k)) || k === 'f12' || (mod && e.shiftKey && ['i', 'j', 'c', 's'].includes(k))) { e.preventDefault(); }
+}, true);
+document.addEventListener('keyup', e => { if ((e.key || '').toLowerCase() === 'printscreen') incidente('captura'); }, true);
+// Conexión: el sistema la detecta solo
+window.addEventListener('offline', () => { if (!EX || EX.entregado) return; EX.offDesde = Date.now(); EX.online = false; estadoSync(); toast('Se perdió la conexión. Siga respondiendo: sus respuestas se guardan en este equipo y se enviarán solas.', 'error'); });
+window.addEventListener('online', () => { if (!EX || !EX.offDesde) return; const min = Math.max(1, Math.round((Date.now() - EX.offDesde) / 60000)); EX.offDesde = 0; incidente('desconexion', `${min} min`, false); });
+
+async function enviarIncidentes() {
+  while (EX.cola.length) {
+    const r = await rpc('registrar_incidente', EX.cola[0]);
+    EX.cola.shift(); LS.set(EX.kI, EX.cola);
+    if (r) { EX.adv = Math.max(EX.adv, r.advertencias || 0); LS.set(EX.kA, EX.adv); if (r.cerrado) { EX.cerradoServidor = true; if (r.sospecha) EX.sospecha = true; } }
+  }
+}
+async function sincronizar(entregarAhora) {
   const pend = { ...EX.pend };
-  if (!Object.keys(pend).length && !entregar) return true;
+  if (!Object.keys(pend).length && !entregarAhora && !EX.cola.length) return true;
   try {
-    const r = await rpc('guardar_respuestas', { p_intento: EX.datos.intento, p_resp: entregar ? EX.resp : pend, p_entregar: !!entregar });
-    for (const k of Object.keys(pend)) if (EX.pend[k] === pend[k]) delete EX.pend[k];
-    LS.set(EX.kP, EX.pend); EX.online = true;
-    if (r?.hora) EX.offset = new Date(r.hora) - Date.now();
-    if (entregar) { LS.del(EX.kE); }
+    if (Object.keys(pend).length || entregarAhora) {
+      const r = await rpc('guardar_respuestas', { p_intento: EX.datos.intento, p_resp: entregarAhora ? EX.resp : pend, p_entregar: false });
+      for (const k of Object.keys(pend)) if (EX.pend[k] === pend[k]) delete EX.pend[k];
+      LS.set(EX.kP, EX.pend);
+      if (r?.hora) EX.offset = new Date(r.hora) - Date.now();
+    }
+    await enviarIncidentes();
+    if (entregarAhora && !EX.cerradoServidor) await rpc('guardar_respuestas', { p_intento: EX.datos.intento, p_resp: {}, p_entregar: true });
+    if (entregarAhora) { LS.del(EX.kE); LS.del(EX.kI); LS.del(EX.kA); }
+    EX.online = true;
+    if (EX.cerradoServidor && !EX.entregado) { EX.entregado = true; clearInterval(reloj); salirPantallaCompleta(); pintarExamen(); }
     estadoSync(); return true;
   } catch (e) { EX.online = false; estadoSync(); return false; }
 }
@@ -123,6 +205,14 @@ function pintarExamen() {
   if (EX.entregado) {
     const pendiente = LS.get(EX.kE, false);
     document.body.classList.remove('focus');
+    if (EX.sospecha) {
+      main.innerHTML = `<div class="card" style="max-width:640px;margin:20px auto;text-align:center;place-items:center;gap:14px"><span class="aico" style="width:72px;height:72px;background:var(--bad-soft);color:var(--bad)">${ic('i-warn', 34)}</span><h2>Su simulacro fue cerrado</h2>
+        <p>${esc(EX.motivo || 'Se incumplieron las reglas')} después de una advertencia. Sus respuestas quedaron guardadas y el caso se informó a la coordinación como <b>sospecha de fraude</b>.</p>
+        <p class="small muted">Si fue un error, hable con su coordinador: solo él puede habilitarlo de nuevo.</p>
+        ${pendiente ? `<div class="alert a-warn">${ic('i-offline')}<div><b>Falta enviar la información</b>No cierre esta página hasta que vuelva la conexión.</div></div>` : ''}
+        <button class="btn sec" type="button" data-ir="inicio">Volver al inicio</button></div>${corp}`;
+      return;
+    }
     main.innerHTML = `<div class="bento" style="padding-top:8px"><section class="hero w12" style="grid-template-columns:minmax(0,1fr)"><div style="display:grid;gap:12px"><span class="eyebrow">${esc(datos.simulacro)}</span><h1>¡Listo! Su simulacro quedó entregado.</h1>
       <p>Respondió ${Object.keys(EX.resp).length} de ${datos.preguntas.length} preguntas. Verá su puntaje cuando termine el tiempo del simulacro.</p>
       ${pendiente ? `<div class="alert a-warn" style="color:var(--ink)">${ic('i-offline')}<div><b>La entrega se enviará cuando vuelva la señal</b>No cierre esta página ni borre los datos del navegador hasta ver «Todo guardado».</div></div>` : ''}
@@ -141,7 +231,7 @@ function pintarExamen() {
     const k = qs.filter(p => EX.resp[p.pos]).length;
     return `<div class="area-block"><span class="ttl"><i style="background:${col(ai)}"></i>${ar}<span class="muted" style="margin-left:auto;font-weight:700">${k}/${qs.length}</span></span><div class="dots">${qs.map(p => { const j = datos.preguntas.indexOf(p); return `<button type="button" class="${EX.resp[p.pos] ? 'ans' : ''} ${EX.flags[p.pos] ? 'flag' : ''} ${j === EX.i ? 'cur' : ''}" data-q="${j}" style="${EX.resp[p.pos] ? `background:${col(ai)}` : ''}" aria-label="Pregunta ${p.pos}">${p.pos}</button>`; }).join('')}</div></div>`;
   }).join('');
-  main.innerHTML = `<div class="fbar"><div class="l"><button class="btn sec sm" type="button" data-salirex aria-label="Guardar y salir">${ic('i-exit', 16)}<span class="hide-s">Guardar y salir</span></button><span class="row" style="gap:8px">${aico(a, 34)}<span class="small"><b>${AREAS[a]}</b><br><span class="muted xs hide-s">${esc(datos.simulacro)}</span></span></span></div>
+  main.innerHTML = `<div class="fbar"><div class="l"><span class="row" style="gap:8px">${aico(a, 34)}<span class="small"><b>${AREAS[a]}</b><br><span class="muted xs hide-s">${esc(datos.simulacro)}</span></span></span></div>
     <div class="row">${syncHTML(Object.keys(EX.pend).length)}<span class="fsz" role="group" aria-label="Tamaño de letra"><button type="button" data-fs="-1" aria-label="Letra más pequeña">A−</button><button type="button" data-fs="1" aria-label="Letra más grande">A+</button></span><span class="timer" aria-label="Tiempo restante"><svg width="34" height="34" viewBox="0 0 34 34" aria-hidden="true"><circle cx="17" cy="17" r="${R}" fill="none" stroke="var(--sunk)" stroke-width="4"/><circle cx="17" cy="17" r="${R}" fill="none" stroke="var(--coral)" stroke-width="4" stroke-linecap="round" stroke-dasharray="${C * left} ${C}" transform="rotate(-90 17 17)"/></svg><span id="tm">${fmtT(restante())}</span></span></div></div>
   <div class="exam">
     <div style="display:grid;gap:14px;min-width:0">
@@ -150,12 +240,18 @@ function pintarExamen() {
         ${ctx}${fig}<div class="stem"><p>${esc(q.enunciado || '').replace(/\n/g, '<br>')}</p></div>
         <div class="opts" role="radiogroup" aria-label="Opciones">${opts}</div>
       </article>
-      <p class="xs muted">Preguntas del ICFES (Evaluar para Avanzar). Puede usar las teclas A, B, C, D y las flechas del teclado. No salga de esta ventana mientras presenta el simulacro: cada salida queda registrada.</p>
+      <p class="xs muted">Preguntas del ICFES (Evaluar para Avanzar). Puede usar las teclas A, B, C, D y las flechas del teclado. No salga de esta ventana: cada salida queda registrada.</p>
     </div>
     <aside class="qnav card"><div class="row between"><h3>Mapa del simulacro</h3><span class="xs muted num">${answered} de ${total}</span></div>${bloques}</aside>
   </div>
   <div class="abar"><button class="btn sec" type="button" data-prev ${EX.i === 0 ? 'disabled' : ''}>←<span class="hide-s"> Anterior</span></button><span class="small muted hide-s num" style="padding-inline:8px">${EX.i + 1} / ${total}</span><button class="btn pri" type="button" data-next>${EX.i === total - 1 ? 'Revisar y entregar' : 'Siguiente →'}</button><button class="btn hot" type="button" data-entregar style="font-size:14px;padding:12px 18px">Entregar</button></div>`;
+  main.insertAdjacentHTML('beforeend', marcaDeAgua());
   main.onclick = clickExamen;
+}
+function marcaDeAgua() {
+  const p = EX.S.perfil, txt = `${p.nombres} ${p.apellidos} · ${p.documento || ''} · FORTALECER`.replace(/[<>&"]/g, '');
+  const svg = `<svg xmlns='http://www.w3.org/2000/svg' width='420' height='220'><text x='10' y='120' transform='rotate(-24 210 110)' font-family='sans-serif' font-size='15' font-weight='700' fill='%23808080'>${encodeURIComponent(txt)}</text></svg>`;
+  return `<div class="marca-agua" aria-hidden="true" style="background-image:url(&quot;data:image/svg+xml;utf8,${svg}&quot;)"></div>`;
 }
 function responder(k) {
   const q = EX.datos.preguntas[EX.i];
@@ -175,10 +271,9 @@ function clickExamen(e) {
   if ('flag' in d) { const p = EX.datos.preguntas[EX.i].pos; EX.flags[p] = !EX.flags[p]; LS.set(EX.kF, EX.flags); return pintarExamen(); }
   if (d.fs) { EX.fs = Math.max(-2, Math.min(4, EX.fs + +d.fs)); LS.set('f-fs', EX.fs); return pintarExamen(); }
   if ('entregar' in d) return pedirEntrega();
-  if ('salirex' in d) { sincronizar(false); clearInterval(reloj); clearInterval(sincro); document.body.classList.remove('focus'); EX.go('inicio'); }
 }
 document.addEventListener('keydown', e => {
-  if (!EX || EX.entregado || !document.body.classList.contains('focus') || $('#modalbox').innerHTML || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) return;
+  if (!EX || EX.entregado || !EX.vig || $('.fraude') || !document.body.classList.contains('focus') || $('#modalbox').innerHTML || /INPUT|SELECT|TEXTAREA/.test(document.activeElement?.tagName)) return;
   const k = e.key.toUpperCase();
   if (/^[A-H]$/.test(k)) responder(k); else if (e.key === 'ArrowRight') mover(1); else if (e.key === 'ArrowLeft') mover(-1);
 });
@@ -193,9 +288,9 @@ function pedirEntrega() {
 }
 async function entregar(porTiempo) {
   EX.entregado = true; LS.set(EX.kE, true);
-  clearInterval(reloj);
+  clearInterval(reloj); salirPantallaCompleta();
   const ok = await sincronizar(true);
-  if (ok) { LS.del(EX.kR); LS.del(EX.kP); LS.del(EX.kF); LS.del(EX.kS); LS.del('f-ex-' + EX.apl); }
+  if (ok) { LS.del(EX.kR); LS.del(EX.kP); LS.del(EX.kF); LS.del('f-ex-' + EX.apl); }
   pintarExamen();
 }
 

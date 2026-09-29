@@ -493,3 +493,32 @@ svg.evo{width:100%;min-width:420px;height:auto;display:block}
 .seat .sal{position:absolute;top:-6px;right:-6px;min-width:18px;height:18px;border-radius:9px;background:var(--warn);color:var(--surface);font:800 10px/18px var(--sans, sans-serif);padding-inline:4px;box-shadow:0 0 0 2px var(--surface)}
 .field textarea{font:inherit;color:var(--ink);resize:vertical}
 #evg{border:1.5px solid var(--line);border-radius:12px;padding:8px 12px;background:var(--surface-2);color:var(--ink);font:inherit;font-size:14px}
+
+/* ---------- v1.2: ingreso visual ---------- */
+.loginwrap .hero.acceso{align-content:center;justify-items:center;gap:22px;text-align:center}
+.acceso .llave{width:min(250px,60%);aspect-ratio:220/240;position:relative}
+.acceso .escudo-acceso{width:100%;height:100%;display:block;filter:drop-shadow(0 18px 40px rgba(0,0,0,.35))}
+.acceso .escudo-acceso circle:first-child{transform-origin:110px 120px;animation:giro 40s linear infinite}
+@keyframes giro{to{transform:rotate(360deg)}}
+.acceso .marca{display:flex;align-items:center;gap:10px;color:var(--hero-ink)}
+.acceso .marca b{font:800 22px var(--sans,'Plus Jakarta Sans',system-ui,sans-serif);letter-spacing:.14em}
+.acceso .pasos{display:flex;align-items:center;gap:10px;flex-wrap:wrap;justify-content:center;color:var(--hero-muted);font-size:13px;font-weight:700}
+.acceso .pasos span{display:inline-flex;align-items:center;gap:6px}
+.acceso .pasos i{display:inline-grid;place-items:center;width:24px;height:24px;border-radius:50%;background:rgba(255,255,255,.12);color:#FFB59E;font-style:normal;font-size:12px}
+.acceso .pasos .sep{width:22px;height:2px;border-radius:2px;background:rgba(255,255,255,.22)}
+@media (max-width:760px){.acceso .llave{width:130px}.loginwrap .hero.acceso{padding-block:26px;gap:14px}}
+@media (prefers-reduced-motion:reduce){.acceso .escudo-acceso circle:first-child{animation:none}}
+
+/* ---------- v1.2: seguridad del simulacro ---------- */
+body.focus .exam, body.focus .fbar, body.focus .abar{-webkit-user-select:none;user-select:none;-webkit-touch-callout:none}
+.marca-agua{position:fixed;inset:0;z-index:40;pointer-events:none;opacity:.07;background-repeat:repeat}
+:root[data-theme="dark"] .marca-agua{opacity:.1}
+.fraude{position:fixed;inset:0;z-index:200;display:grid;place-items:center;padding:16px;background:rgba(20,10,10,.72);backdrop-filter:blur(6px)}
+.fraude-in{max-width:520px;width:100%;background:var(--surface);color:var(--ink);border:3px solid var(--bad);border-radius:24px;padding:28px;display:grid;gap:12px;text-align:center;justify-items:center;box-shadow:0 30px 80px rgba(0,0,0,.4);animation:sacudir .45s ease}
+.fraude-ico{width:72px;height:72px;border-radius:50%;display:grid;place-items:center;background:var(--bad-soft);color:var(--bad)}
+@keyframes sacudir{0%,100%{transform:translateX(0)}20%{transform:translateX(-10px)}40%{transform:translateX(10px)}60%{transform:translateX(-6px)}80%{transform:translateX(6px)}}
+@media (prefers-reduced-motion:reduce){.fraude-in{animation:none}}
+.reglas{max-width:720px;margin:12px auto;gap:16px}
+.reglas-lista{margin:0;padding-left:22px;display:grid;gap:10px;font-size:16px}
+.seat.s-bad{background:var(--bad);color:#fff}
+.inclist{display:grid;gap:6px;max-height:220px;overflow:auto;margin:0;padding-left:18px;font-size:14px}

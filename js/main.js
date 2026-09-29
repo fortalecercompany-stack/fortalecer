@@ -1,6 +1,6 @@
 // FORTALECER · arranque, ingreso y navegación
 import { $, esc, ic, toast, errorMsg, modal, cerrarModal, corp, escudo, iniciales, setCortes, field } from './lib.js';
-import { sb, configurado, rpc, correoIngreso } from './api.js';
+import { sb, configurado, rpc, correoIngreso, borrarSesionLocal } from './api.js';
 
 export const S = { sesion: null, perfil: null, colegio: null, grupo: null, recuperando: false };
 
@@ -56,21 +56,61 @@ function menuCuenta() {
   modal({ icon: 'i-user', titulo: `${esc(p.nombres)} ${esc(p.apellidos)}`, sub: `${ROL_TXT[p.rol]}${S.colegio ? ' · ' + esc(S.colegio.nombre) : ''}`,
     cuerpo: `<div style="display:grid;gap:10px"><button class="btn sec" type="button" data-cambiar-clave>${ic('i-key')}Cambiar contraseña</button><button class="btn sec" type="button" data-tema>${ic('i-moon')}Cambiar tema claro u oscuro</button><button class="btn ghost" type="button" data-salir style="color:var(--bad)">${ic('i-exit')}Cerrar sesión</button></div>` });
 }
-async function salir() { cerrarModal(); await sb.auth.signOut(); S.perfil = null; S.colegio = null; S.grupo = null; location.hash = ''; arrancar(); }
+// Cierre de sesión seguro: invalida la sesión en el servidor, borra todo rastro local y recarga la página.
+export async function salir(mensaje = '') {
+  cerrarModal();
+  S.perfil = null; S.colegio = null; S.grupo = null;
+  try { await Promise.race([sb?.auth.signOut(), new Promise(r => setTimeout(r, 2500))]); } catch { }
+  borrarSesionLocal();
+  try { localStorage.removeItem('f-actividad'); if (mensaje) sessionStorage.setItem('f-aviso', mensaje); } catch { }
+  location.replace(location.pathname);
+}
+
+// ---------- Cierre por inactividad ----------
+// Sin actividad durante este tiempo, la sesión se cierra sola (también si el equipo se apagó con la sesión abierta).
+const LIMITE_MIN = { estudiante: 30, docente: 20, coordinador: 20, soporte: 20, admin: 20 };
+const limiteMs = () => (LIMITE_MIN[S.perfil?.rol] || 20) * 60000;
+const enExamen = () => document.body.classList.contains('focus');
+let ultimaMarca = 0;
+function marcarActividad() {
+  const t = Date.now(); if (t - ultimaMarca < 5000) return; ultimaMarca = t;
+  try { localStorage.setItem('f-actividad', String(t)); } catch { }
+}
+['pointerdown', 'keydown', 'scroll', 'touchstart', 'mousemove'].forEach(ev => document.addEventListener(ev, marcarActividad, { passive: true, capture: true }));
+const ultimaActividad = () => { try { return +localStorage.getItem('f-actividad') || 0; } catch { return 0; } };
+setInterval(() => {
+  if (!S.perfil || enExamen()) { if (enExamen()) marcarActividad(); return; }
+  if (Date.now() - ultimaActividad() > limiteMs()) salir('Su sesión se cerró por inactividad. Ingrese de nuevo.');
+}, 30000);
 
 // ---------- Pantallas de ingreso ----------
 function pantallaIngreso() {
   marco();
   main().innerHTML = `<div class="loginwrap fade">
-    <div class="hero"><div style="display:grid;gap:14px"><span class="eyebrow">Simulacros Saber 11 · grados 9, 10 y 11</span><h1>Prepárate para el Saber 11 con preguntas reales del ICFES.</h1></div>
-      <div class="feat"><div>${ic('i-exam', 18)}<span><b>125 preguntas por simulacro,</b> en las 5 áreas de la prueba.</span></div><div>${ic('i-offline', 18)}<span><b>Funciona aunque se caiga el internet.</b> Las respuestas quedan guardadas.</span></div><div>${ic('i-results', 18)}<span><b>Puntajes por área y global,</b> con los niveles del ICFES.</span></div></div></div>
+    <div class="hero acceso" aria-hidden="true">
+      <div class="llave">
+        <svg viewBox="0 0 220 240" class="escudo-acceso">
+          <defs><linearGradient id="gEsc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4556B8"/><stop offset="1" stop-color="#1C2766"/></linearGradient></defs>
+          <circle cx="110" cy="120" r="104" fill="none" stroke="rgba(255,255,255,.14)" stroke-width="2" stroke-dasharray="4 10"/>
+          <circle cx="110" cy="120" r="84" fill="none" stroke="rgba(224,86,47,.45)" stroke-width="2"/>
+          <path d="M110 44 L166 64 V112 C166 150 142 174 110 188 C78 174 54 150 54 112 V64 Z" fill="url(#gEsc)" stroke="rgba(255,255,255,.35)" stroke-width="2"/>
+          <rect x="86" y="108" width="48" height="40" rx="8" fill="#FFFFFF"/>
+          <path d="M94 108 V96 a16 16 0 0 1 32 0 V108" fill="none" stroke="#FFFFFF" stroke-width="7" stroke-linecap="round"/>
+          <circle cx="110" cy="124" r="6" fill="#E0562F"/><rect x="107.5" y="126" width="5" height="12" rx="2.5" fill="#E0562F"/>
+        </svg>
+      </div>
+      <div class="marca"><svg width="30" height="33"><use href="#logo"/></svg><b>FORTALECER</b></div>
+      <div class="pasos"><span><i>1</i>Usuario</span><span class="sep"></span><span><i>2</i>Contraseña</span><span class="sep"></span><span><i>${ic('i-sync', 13)}</i>Ingresar</span></div>
+    </div>
     <form id="flogin" novalidate><div style="display:grid;gap:4px"><span class="lbl">Bienvenido</span><h2 style="font-size:26px">Ingresar</h2></div>
       ${field('u', 'Usuario', '', 'autocomplete="username" required', 'Estudiantes: número de documento. Coordinadores, docentes y administrador: correo.')}
       ${field('pw', 'Contraseña', '', 'type="password" autocomplete="current-password" required')}
       <p id="lerr" class="small" style="color:var(--bad)" hidden></p>
       <button class="btn pri" type="submit" id="lbtn">Ingresar</button>
       <button class="linkbtn small" type="button" id="olvide" style="justify-self:start">Olvidé mi contraseña</button>
-      <p class="xs muted">La primera vez, la contraseña es su número de documento. El sistema le pedirá cambiarla.</p></form></div>${corp}`;
+      </form></div>${corp}`;
+  let aviso = ''; try { aviso = sessionStorage.getItem('f-aviso') || ''; sessionStorage.removeItem('f-aviso'); } catch { }
+  if (aviso) { const e = $('#lerr'); e.textContent = aviso; e.hidden = false; e.style.color = 'var(--warn)'; }
   $('#flogin').onsubmit = async e => {
     e.preventDefault();
     const u = $('#u').value.trim(), pw = $('#pw').value, err = $('#lerr'), btn = $('#lbtn');
@@ -83,6 +123,7 @@ function pantallaIngreso() {
       err.textContent = /Invalid login/i.test(error.message) ? 'El usuario o la contraseña no coinciden. Revíselos e intente de nuevo.' : /banned/i.test(error.message) ? 'Su cuenta está desactivada. Comuníquese con la coordinación de su colegio.' : errorMsg(error);
       err.hidden = false; return;
     }
+    marcarActividad(); ultimaMarca = 0; marcarActividad();
     arrancar();
   };
   $('#olvide').onclick = () => {
@@ -102,7 +143,7 @@ function pantallaIngreso() {
 function pantallaClave(primera) {
   marco();
   main().innerHTML = `<div class="card fade" style="max-width:520px;width:100%;margin:10px auto">
-    <div class="alert a-info">${ic('i-key')}<div><b>${primera ? 'Primer ingreso: cree su contraseña' : S.recuperando ? 'Cree su contraseña nueva' : 'Cambiar contraseña'}</b>${primera ? 'Por seguridad, cambie la contraseña inicial.' : 'Use una que pueda recordar.'}</div></div>
+    <div class="alert a-info">${ic('i-key')}<div><b>${primera ? `Bienvenido${S.perfil?.nombres ? ', ' + esc(S.perfil.nombres.split(' ')[0]) : ''}. Es su primer ingreso` : S.recuperando ? 'Cree su contraseña nueva' : 'Cambiar contraseña'}</b>${primera ? 'Usted entró con la contraseña inicial, que es su número de documento. Por seguridad, cree ahora una contraseña personal. Desde hoy entrará con su mismo usuario y esta contraseña nueva.' : 'Use una que pueda recordar.'}</div></div>
     <form id="fclave" novalidate style="display:grid;gap:14px">
       ${field('n1', 'Nueva contraseña', '', 'type="password" autocomplete="new-password"', 'Mínimo 8 caracteres, con letras y números.')}
       ${field('n2', 'Repita la nueva contraseña', '', 'type="password" autocomplete="new-password"')}
@@ -168,6 +209,10 @@ export async function arrancar() {
   const { data: { session } } = await sb.auth.getSession();
   S.sesion = session;
   if (!session) { S.perfil = null; return pantallaIngreso(); }
+  // Si la sesión quedó abierta y pasó demasiado tiempo sin uso, se cierra.
+  const ua = ultimaActividad();
+  if (!S.recuperando && ua && Date.now() - ua > 30 * 60000) return salir('Su sesión se cerró por inactividad. Ingrese de nuevo.');
+  marcarActividad();
   if (S.recuperando) return pantallaClave(false);
   main().innerHTML = `<div class="card" style="place-items:center;padding:48px;margin-top:20px"><div class="spin"></div><span class="muted small">Cargando…</span></div>`;
   let ses;
