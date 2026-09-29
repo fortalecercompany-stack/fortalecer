@@ -1,13 +1,7 @@
-// =====================================================================
-// FORTALECER · Conexión con su base de datos
-// Reemplace los dos valores con los de su proyecto de Supabase:
-// Supabase > Project Settings > API  (o  Data API)
-//   · "Project URL"            -> SUPABASE_URL
-//   · "anon" / "public" key   -> SUPABASE_ANON_KEY
+// FORTALECER · Conexión con la base de datos (Supabase)
 // Esta llave es pública: puede estar en la página sin problema.
-// NUNCA pegue aquí la llave "service_role".
-// =====================================================================
+// NUNCA pegue aquí la llave "secret" ni "service_role".
 window.FORTALECER_CONFIG = {
-  SUPABASE_URL: 'PEGUE_AQUI_LA_PROJECT_URL',
-  SUPABASE_ANON_KEY: 'PEGUE_AQUI_LA_ANON_KEY',
+  SUPABASE_URL: 'https://afpnguainugypfncbiby.supabase.co',
+  SUPABASE_ANON_KEY: 'sb_publishable_CsrQGGJKO0sHNuRDSIU2dA_rieMdOwL',
 };
