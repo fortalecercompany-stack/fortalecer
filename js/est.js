@@ -1,43 +1,129 @@
 // FORTALECER · pantallas del estudiante
-import { $, $$, esc, ic, AREAS, SHORT, AICON, col, soft, aico, chip, toast, errorMsg, modal, cerrarModal, confirmar, head, cargando, vacio, corp, rings5, lvlTag, nivel, nivelNombre, fechaHora, hora, fecha, barra, iniciales } from './lib.js';
+import { $, $$, esc, ic, AREAS, SHORT, AICON, col, soft, aico, chip, toast, errorMsg, modal, cerrarModal, confirmar, head, cargando, vacio, corp, rings5, lvlTag, nivel, nivelNombre, fechaHora, hora, fecha, barra, iniciales, pill } from './lib.js';
 import { sb, rpc } from './api.js';
 import { avisosHTML } from './avisos.js';
+import { notaTxt, notaHTML, notaCls, notaRoja, volverBtn, confeti } from './lib.js';
+import { prueba, revision } from './prueba.js';
 
 export async function render(ctx) {
   const { seccion } = ctx;
   if (seccion === 'examen') return examen(ctx);
+  if (seccion === 'prueba') return prueba(ctx);
+  if (seccion === 'revision') return revision(ctx);
   if (seccion === 'resultados') return resultados(ctx);
+  if (seccion === 'notas') return notas(ctx);
+  if (seccion === 'refuerzo') return refuerzo(ctx);
+  if (seccion === 'honor') return honor(ctx);
   if (seccion === 'perfil') return perfil(ctx);
   return inicio(ctx);
 }
 
 const ESTADO = { proxima: ['Próximo', 'p-info'], abierta: ['Abierto', 'p-ok'], entregado: ['Entregado', 'p-brand'], cerrada: ['Terminado', 'p-mute'] };
+const escalaDe = S => ({ min: S.colegio?.escala_min ?? 1, max: S.colegio?.escala_max ?? 5, aprobar: S.colegio?.nota_aprobar ?? 3, decimales: S.colegio?.decimales ?? 1 });
+const cuenta = ms => { const m = Math.max(0, Math.round(ms / 60000)); if (m < 60) return [m, m === 1 ? 'minuto' : 'minutos']; const h = Math.round(m / 60); if (h < 48) return [h, h === 1 ? 'hora' : 'horas']; const d = Math.round(h / 24); return [d, 'días']; };
 
 async function inicio({ S, main, go }) {
   main.innerHTML = cargando();
-  const [apl, res, avHTML] = await Promise.all([rpc('mis_aplicaciones'), rpc('mis_resultados').catch(() => []), avisosHTML({ S })]);
-  const abierta = apl.find(a => a.estado === 'abierta');
-  const proxima = apl.filter(a => a.estado === 'proxima').sort((a, b) => new Date(a.inicio) - new Date(b.inicio))[0];
-  const ult = res[0];
+  const [apl, exs, res, N, plan, avHTML] = await Promise.all([rpc('mis_aplicaciones'), rpc('mis_examenes_doc').catch(() => []), rpc('mis_resultados').catch(() => []), rpc('mis_notas', {}).catch(() => null), rpc('mi_plan').catch(() => null), avisosHTML({ S })]);
+  const es = N?.escala || escalaDe(S), d = es.decimales;
+  const ahora = Date.now();
+  // Lo pendiente: exámenes de docentes y simulacros abiertos o próximos, ordenados por cuándo cierran
+  const pend = [
+    ...exs.filter(e => e.estado === 'abierto' || e.estado === 'proximo').map(e => ({ tipo: e.taller ? 'taller' : 'examen', id: e.id, titulo: e.titulo, sub: `${esc(e.materia || 'Examen')} · ${esc(e.docente)}`, abierto: e.estado === 'abierto', curso: e.en_curso, cuando: e.estado === 'abierto' ? new Date(e.fin) : new Date(e.apertura), usados: e.usados, intentos: e.intentos })),
+    ...apl.filter(a => a.estado === 'abierta' || a.estado === 'proxima').map(a => ({ tipo: 'simulacro', id: a.id, titulo: a.nombre, sub: 'Simulacro ICFES · 125 preguntas', abierto: a.estado === 'abierta', curso: a.respondidas > 0, cuando: a.estado === 'abierta' ? new Date(a.fin) : new Date(a.inicio) })),
+  ].sort((x, y) => (y.abierto - x.abierto) || (x.cuando - y.cuando));
+  const urgente = pend.find(p => p.abierto);
   const nombre = esc(S.perfil.nombres.split(' ')[0]);
-  const heroTxt = abierta
-    ? `<h1>${nombre}, el ${esc(abierta.nombre)} ya está abierto.</h1><p>125 preguntas de las 5 áreas, en una sola sesión. Tiene hasta las ${hora(abierta.fin)}. Antes de empezar verá las reglas del simulacro.</p>
-       <div class="row">${S.perfil.autorizacion_acudiente ? `<button class="btn hot" type="button" data-examen="${abierta.id}">${ic('i-exam')}${abierta.respondidas ? 'Continuar simulacro' : 'Empezar simulacro'}</button>` : `<span class="pill p-warn">Falta la autorización del acudiente</span>`}</div>`
-    : proxima ? `<h1>${nombre}, su próximo simulacro es el ${fecha(proxima.inicio)}.</h1><p>${esc(proxima.nombre)} · empieza a las ${hora(proxima.inicio)}.</p>`
-    : `<h1>Hola, ${nombre}.</h1><p>Por ahora no tiene simulacros abiertos. Cuando la coordinación programe uno, aparecerá aquí.</p>`;
-  const lista = apl.length ? apl.map(a => { const [t, c] = ESTADO[a.estado]; return `<div class="row between" style="padding-block:10px;border-bottom:1px solid var(--line)"><div class="row" style="gap:12px;flex-wrap:nowrap"><span class="aico" style="background:var(--surface-2);color:var(--brand)">${ic('i-exam', 20)}</span><div><b>${esc(a.nombre)}</b><div class="xs muted">${fechaHora(a.inicio)} a ${hora(a.fin)}</div></div></div>${a.estado === 'abierta' && S.perfil.autorizacion_acudiente ? `<button class="btn pri sm" type="button" data-examen="${a.id}">${a.respondidas ? 'Continuar' : 'Empezar'}</button>` : `<span class="pill ${c}">${t}</span>`}</div>`; }).join('') : vacio('i-cal', 'Sin simulacros todavía');
-  main.innerHTML = `<div class="bento">
-    <section class="hero w8"><div style="display:grid;gap:14px"><span class="eyebrow">${fecha(new Date())}</span>${heroTxt}</div>
-      <div style="justify-self:center;color:var(--hero-ink)">${ult ? rings5(ult.areas.map(x => x.puntaje), 180, ult.global, 'último global') : `<div class="count" style="grid-template-columns:1fr"><div><b>${apl.length}</b><span>simulacros</span></div></div>`}</div></section>
-    <div class="card w4"><span class="lbl">Autorización del acudiente</span>${S.perfil.autorizacion_acudiente
-      ? `<div class="row" style="gap:12px;flex-wrap:nowrap"><span class="aico" style="background:var(--ok-soft);color:var(--ok)">${ic('i-sync', 22)}</span><div><b>Registrada</b><p class="xs muted">Puede presentar los simulacros.</p></div></div>`
-      : `<div class="alert a-warn">${ic('i-warn')}<div><b>Falta la autorización</b>Sin ella no puede presentar simulacros. Pídala a la coordinación de su colegio.</div></div>`}</div>
-    <div class="card w7"><div><span class="lbl">Mis simulacros</span><h2>Programados para mi grupo</h2></div><div>${lista}</div></div>
-    <div class="card w5"><div class="row between"><div><span class="lbl">Mi último resultado</span><h2>${ult ? esc(ult.simulacro) : 'Aún sin resultados'}</h2></div>${ult ? `<button class="btn sec sm" type="button" data-ir="resultados">Ver</button>` : ''}</div>
-      ${ult ? ult.areas.map(x => `<div style="display:grid;grid-template-columns:110px minmax(0,1fr) 34px;gap:10px;align-items:center"><span class="row" style="gap:8px;flex-wrap:nowrap">${aico(x.area, 26)}<b class="small">${SHORT[x.area]}</b></span>${barra(x.puntaje, col(x.area))}<b class="num" style="text-align:right">${x.puntaje}</b></div>`).join('') : '<p class="small muted">Verá su puntaje cuando termine el tiempo de su primer simulacro.</p>'}</div>
-    ${avHTML}
-  </div>${corp}`;
-  main.onclick = e => { const b = e.target.closest('[data-examen]'); if (b) go('examen/' + b.dataset.examen); };
+  const ult = res[0], ant = res[1];
+  const pendHTML = pend.length ? pend.slice(0, 6).map(p => { const [n, u] = cuenta(p.cuando - ahora);
+    const btn = p.abierto ? (p.tipo === 'simulacro' ? (S.perfil.autorizacion_acudiente ? `<button class="btn hot sm" type="button" data-examen="${p.id}">${p.curso ? 'Continuar' : 'Empezar'}</button>` : pill('Falta autorización', 'p-warn')) : `<button class="btn hot sm" type="button" data-prueba="${p.id}">${p.curso ? 'Continuar' : p.usados ? 'Otro intento' : 'Empezar'}</button>`) : pill('Próximo', 'p-info');
+    return `<div class="pend ${p.abierto ? 'hot' : ''}"><div class="cnt"><b>${n}</b><span>${u} ${p.abierto ? 'para cerrar' : 'para abrir'}</span></div><div class="tx"><b>${esc(p.titulo)}</b><span class="xs muted">${p.sub} · ${p.abierto ? 'cierra' : 'abre'} ${fechaHora(p.cuando)}</span></div>${btn}</div>`; }).join('')
+    : `<p class="small muted">No tiene nada pendiente. Aproveche para practicar en su plan de refuerzo.</p>`;
+  const mats = (N?.materias || []);
+  const notasHTML = mats.length ? `<div class="mnotas">${mats.map(m => `<span><b>${esc(m.materia)}</b><br><span class="xs muted">${esc(m.docente || '')}</span></span>${notaHTML(m.nota, es)}`).join('')}</div>` : `<p class="small muted">Aún no tiene notas en este período.</p>`;
+  const sub = urgente ? `${urgente.tipo === 'simulacro' ? 'El' : 'El examen'} <b>${esc(urgente.titulo)}</b> está abierto. ${urgente.tipo === 'simulacro' && !S.perfil.autorizacion_acudiente ? 'Falta la autorización de su acudiente.' : ''}` : pend.length ? `Lo próximo: <b>${esc(pend[0].titulo)}</b>, el ${fecha(pend[0].cuando)}.` : 'Por ahora no tiene exámenes ni simulacros abiertos.';
+  const accion = urgente ? (urgente.tipo === 'simulacro' ? (S.perfil.autorizacion_acudiente ? `<button class="btn pri" type="button" data-examen="${urgente.id}">${ic('i-play', 18)}${urgente.curso ? 'Continuar' : 'Empezar'} simulacro</button>` : '') : `<button class="btn pri" type="button" data-prueba="${urgente.id}">${ic('i-play', 18)}${urgente.curso ? 'Continuar' : 'Empezar'} examen</button>`) : `<button class="btn pri" type="button" data-ir="refuerzo">${ic('i-up', 18)}Practicar</button>`;
+  main.innerHTML = `${head(fecha(new Date()), `Hola, ${nombre}.`, accion, { sub })}
+    <div class="grid g3">
+      <div class="card tile2"><span class="lbl">Puntaje ICFES</span><span class="v">${ult ? `<span data-contar="${ult.global}">${ult.global}</span><span class="muted" style="font-size:18px"> / 500</span>` : '—'}</span><span class="xs muted">${ult ? `${esc(ult.simulacro)}${ant ? ` · ${ult.global >= ant.global ? 'subió' : 'bajó'} ${Math.abs(ult.global - ant.global)}` : ''}` : 'Aún sin simulacros terminados'}</span></div>
+      <div class="card tile2" style="--tc:var(--coral)"><span class="lbl">Mi puesto</span><span class="v">${ult ? `${ult.puesto}.º<span class="muted" style="font-size:18px"> de ${ult.total}</span>` : '—'}</span><span class="xs muted">${ult ? `En el grupo · ${ult.puesto_colegio}.º de ${ult.total_colegio} en el colegio` : 'Se ve después del primer simulacro'}</span></div>
+      <div class="card tile2" style="--tc:var(--warn)"><span class="lbl">Racha de práctica</span><span class="v">${plan?.racha || 0}<span class="muted" style="font-size:18px"> ${plan?.racha === 1 ? 'día' : 'días'}</span></span><span class="xs muted">${plan?.hoy?.total ? `Hoy respondió ${plan.hoy.total} preguntas` : 'Practique hoy para no perderla'}</span></div>
+    </div>
+    <div class="bento">
+      <div class="card w7"><div><span class="lbl">Pendientes</span><h2>Lo que tengo por hacer</h2></div><div style="display:grid;gap:10px">${pendHTML}</div></div>
+      <div class="card w5"><div class="row between"><div><span class="lbl">${N?.periodo ? esc(N.periodo.nombre) : 'Período'}</span><h2>Mis notas</h2></div><button class="btn sec sm" type="button" data-ir="notas">Ver todo</button></div>${notasHTML}</div>
+      ${ult ? `<div class="card w12"><div class="row between"><div><span class="lbl">Último simulacro</span><h2>${esc(ult.simulacro)}</h2></div><button class="btn sec sm" type="button" data-ir="resultados">Ver resultados</button></div>${[0, 1, 2, 3, 4].map(i => { const x = ult.areas.find(z => z.area === i) || { puntaje: 0 }; return `<div style="display:grid;grid-template-columns:130px minmax(0,1fr) 34px;gap:10px;align-items:center"><span class="row" style="gap:8px;flex-wrap:nowrap">${aico(i, 26)}<b class="small">${SHORT[i]}</b></span>${barra(x.puntaje, col(i))}<b class="num" style="text-align:right">${x.puntaje}</b></div>`; }).join('')}</div>` : ''}
+      ${!S.perfil.autorizacion_acudiente ? `<div class="card w12"><div class="alert a-warn">${ic('i-warn')}<div><b>Falta la autorización de su acudiente</b>Sin ella no puede presentar los simulacros ICFES. Los exámenes de sus docentes sí los puede presentar.</div></div></div>` : ''}
+      ${avHTML}
+    </div>${corp}`;
+  main.onclick = e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.examen) go('examen/' + b.dataset.examen); if (b.dataset.prueba) go('prueba/' + b.dataset.prueba); };
+}
+
+// ---------- Mis notas ----------
+async function notas({ S, main, params, go }) {
+  main.innerHTML = cargando();
+  const [N, exs] = await Promise.all([rpc('mis_notas', params[0] ? { p_periodo: params[0] } : {}), rpc('mis_examenes_doc').catch(() => [])]);
+  const es = N.escala, d = es.decimales;
+  const vals = N.materias.filter(m => m.nota != null).map(m => +m.nota), prom = vals.length ? vals.reduce((a, b) => a + b, 0) / vals.length : null;
+  const ex = Object.fromEntries(exs.map(e => [e.id, e]));
+  main.innerHTML = `${head(N.periodo ? `${esc(N.periodo.nombre)} ${N.periodo.anio}` : 'Todo el año', 'Mis notas', N.periodos.length > 1 ? `<div class="field"><label for="per">Período</label><select id="per">${N.periodos.map(p => `<option value="${p.id}" ${p.id === N.periodo?.id ? 'selected' : ''}>${esc(p.nombre)} ${p.anio}</option>`).join('')}</select></div>` : '',
+      { sub: prom == null ? 'Aún no tiene notas en este período.' : `Promedio general: <b>${notaTxt(prom, d)}</b>. Se aprueba con ${notaTxt(es.aprobar, d)}.` })}
+    ${N.materias.length ? `<div class="grid g2">${N.materias.map((m, i) => `<div class="card tile2" style="--tc:var(--a${i % 5 + 1})"><div class="row between"><div><span class="lbl">${esc(m.docente || '')}</span><h3>${esc(m.materia)}</h3></div><span class="v" style="color:var(--${m.nota == null ? 'muted' : notaCls(m.nota, es)})">${notaTxt(m.nota, d)}</span></div>
+        <div style="display:grid;gap:6px">${(m.examenes || []).map(x => { const e = ex[x.id]; return `<div class="row between" style="padding:8px 10px;border-radius:12px;background:var(--surface-2)"><span class="small"><b>${esc(x.titulo)}</b><br><span class="xs muted">${new Date(x.fin) > Date.now() ? 'Abierto hasta ' + fechaHora(x.fin) : 'Cerró ' + fecha(x.fin)}</span></span><span class="row" style="gap:8px">${notaHTML(x.nota, es)}${e?.revision && e.ultimo ? `<button class="btn ghost sm" type="button" data-rev="${e.ultimo}">Revisar</button>` : ''}</span></div>`; }).join('')}</div></div>`).join('')}</div>`
+      : `<div class="card">${vacio('i-list', 'Aún no hay notas', 'Cuando sus docentes programen exámenes, verá aquí sus notas por materia.')}</div>`}
+    <p class="xs muted">Si un examen ya cerró y no lo presentó, cuenta con la nota mínima (${notaTxt(es.min, d)}). Los talleres de práctica no cuentan.</p>${corp}`;
+  main.onchange = e => { if (e.target.id === 'per') go('notas/' + e.target.value); };
+  main.onclick = e => { const r = e.target.closest('[data-rev]'); if (r) go('revision/' + r.dataset.rev); };
+}
+
+// ---------- Plan de refuerzo y práctica ----------
+let PR = null;
+async function refuerzo({ S, main, go }) {
+  main.innerHTML = cargando();
+  const plan = await rpc('mi_plan');
+  const debiles = plan.competencias.slice(0, 3);
+  const disp = plan.disponibles || {};
+  main.innerHTML = `${head('Plan de refuerzo', 'A practicar', '', { sub: `Racha: <b>${plan.racha} ${plan.racha === 1 ? 'día' : 'días'}</b> seguidos practicando.${plan.hoy?.total ? ` Hoy lleva ${plan.hoy.aciertos} de ${plan.hoy.total}.` : ''}` })}
+    <div class="grid g3">${debiles.length ? debiles.map(c => `<div class="card tile2" style="--tc:${col(c.area)}"><span class="row" style="gap:8px">${aico(c.area, 30)}<span class="lbl">${SHORT[c.area]}</span></span><b style="font-size:17px">${esc(c.competencia)}</b><span class="small muted">Acertó ${c.aciertos} de ${c.total} (${c.pct}%) en los simulacros.</span><button class="btn pri sm" type="button" data-prac="${c.area}" data-comp="${esc(c.competencia)}" ${disp[c.area] ? '' : 'disabled'}>${disp[c.area] ? 'Practicar 5 preguntas' : 'Sin preguntas disponibles'}</button></div>`).join('')
+      : `<div class="card w12" style="grid-column:1/-1">${vacio('i-up', 'Su plan aparece después del primer simulacro', 'Mientras tanto, practique el área que quiera.')}</div>`}</div>
+    <div class="card"><div><span class="lbl">Práctica libre</span><h2>Elija un área</h2></div><div class="grid g5" style="grid-template-columns:repeat(auto-fit,minmax(150px,1fr))">${AREAS.map((a, i) => `<button class="card tile2" type="button" data-prac="${i}" style="--tc:${col(i)};cursor:pointer;font:inherit;color:inherit;text-align:left" ${disp[i] ? '' : 'disabled'}>${aico(i, 34)}<b>${a}</b><span class="xs muted">${disp[i] ? 'Practicar' : 'Sin preguntas'}</span></button>`).join('')}</div>
+      <p class="xs muted">Son preguntas del ICFES que no salen en ningún simulacro. Al responder verá enseguida si acertó y por qué.</p></div>
+    ${plan.talleres.length ? `<div class="card"><div><span class="lbl">De sus docentes</span><h2>Talleres abiertos</h2></div><div style="display:grid;gap:10px">${plan.talleres.map(t => `<div class="pend"><div class="tx"><b>${esc(t.titulo)}</b><span class="xs muted">${esc(t.materia || '')} · hasta ${fechaHora(t.fin)}</span></div><button class="btn sec sm" type="button" data-prueba="${t.id}">Abrir</button></div>`).join('')}</div></div>` : ''}${corp}`;
+  main.onclick = async e => {
+    const b = e.target.closest('button'); if (!b) return;
+    if (b.dataset.prueba) return go('prueba/' + b.dataset.prueba);
+    if (b.dataset.prac != null) {
+      main.innerHTML = cargando('Buscando preguntas…');
+      try { const qs = await rpc('mi_practica', { p_area: +b.dataset.prac, p_competencia: b.dataset.comp || null }); if (!qs.length) { toast('No hay más preguntas en esta área por ahora.', 'error'); return refuerzo({ S, main, go }); } PR = { qs, i: 0, r: {}, ok: 0, main, S, go }; practicar(); }
+      catch (er) { toast(errorMsg(er), 'error'); refuerzo({ S, main, go }); }
+    }
+  };
+}
+function practicar() {
+  const { qs, i, r, main } = PR, q = qs[i], a = q.area, res = r[i];
+  if (i >= qs.length) return finPractica();
+  const opts = Object.entries(q.opciones || {}).map(([k, v]) => { const cls = res ? (k === q.respuesta ? 'right' : k === res ? 'wrong' : '') : ''; return `<button type="button" class="opt ${cls}" data-o="${k}" ${res ? 'disabled' : ''} aria-checked="${res === k}"><span class="k">${k}</span><span>${esc(v)}</span></button>`; }).join('');
+  main.innerHTML = `${head(`${SHORT[a]} · pregunta ${i + 1} de ${qs.length}`, 'Práctica', `<button class="btn sec" type="button" data-ir="refuerzo">Salir</button>`)}
+    <article class="qcard practq">${q.contexto ? `<div class="ctx">${esc(q.contexto).replace(/\n/g, '<br>')}</div>` : ''}${q.figura_url ? `<img src="${esc(q.figura_url)}" alt="Figura" style="max-width:100%;border-radius:14px;background:#fff">` : ''}<div class="stem"><p>${esc(q.enunciado || '').replace(/\n/g, '<br>')}</p></div><div class="opts">${opts}</div>
+      ${res ? `<div class="alert ${res === q.respuesta ? 'a-ok' : 'a-warn'}">${ic(res === q.respuesta ? 'i-sync' : 'i-info')}<div><b>${res === q.respuesta ? '¡Correcto!' : `La correcta era la ${q.respuesta}`}</b>${esc(q.justificacion || '')}</div></div><button class="btn pri" type="button" data-sig style="justify-self:start">${i === qs.length - 1 ? 'Ver cómo me fue' : 'Siguiente →'}</button>` : ''}</article>${corp}`;
+  main.onclick = e => { const b = e.target.closest('button'); if (!b) return; if (b.dataset.o && !res) { r[i] = b.dataset.o; if (b.dataset.o === q.respuesta) PR.ok++; practicar(); } if ('sig' in b.dataset) { PR.i++; practicar(); } };
+}
+async function finPractica() {
+  const { ok, qs, main, go } = PR;
+  let racha = 0; try { racha = await rpc('registrar_practica', { p_aciertos: ok, p_total: qs.length }); } catch { }
+  main.innerHTML = `<section class="band"><i class="blob b1"></i><i class="blob b2"></i>${ok >= Math.ceil(qs.length * .6) ? confeti() : ''}<div class="band-in"><div class="t"><span class="chipe">Práctica terminada</span><h1>${ok} de ${qs.length} correctas</h1><p>Racha: <b>${racha} ${racha === 1 ? 'día' : 'días'}</b> seguidos practicando. Vuelva mañana para mantenerla.</p><div class="acts"><button class="btn pri" type="button" data-ir="refuerzo">Seguir practicando</button><button class="btn sec" type="button" data-ir="inicio">Inicio</button></div></div><div class="hoja-nota" style="display:grid;place-items:center;gap:4px"><span style="color:#E0562F">${ic('i-fire', 54)}</span><b style="font:700 40px var(--display);color:#141833">${racha}</b><small style="color:#5C6283;font-weight:700">${racha === 1 ? 'día' : 'días'}</small></div></div></section>${corp}`;
+  main.onclick = null;
+}
+
+// ---------- Cuadro de honor ----------
+async function honor({ S, main }) {
+  main.innerHTML = cargando();
+  const H = await rpc('cuadro_honor');
+  const grados = [...new Set(H.map(x => x.grado))];
+  const yo = `${S.perfil.nombres} ${S.perfil.apellidos}`;
+  main.innerHTML = `${head('Los 10 mejores de cada grado', 'Cuadro de honor', '', { volver: volverBtn('resultados', 'Resultados ICFES'), sub: 'Según el puntaje global del último simulacro de cada grado.' })}
+    ${grados.length ? `<div class="grid g3">${grados.map(g => { const L = H.filter(x => x.grado === g); return `<div class="card"><div><span class="lbl">${esc(L[0].simulacro)}</span><h2>Grado ${g}.°</h2></div><ol class="honor">${L.map(x => `<li class="${x.nombre === yo ? 'yo' : ''}"><span class="pos">${x.puesto}</span><span><b class="small">${esc(x.nombre)}</b><br><span class="xs muted">Grupo ${esc(x.grupo)}</span></span><b class="num">${x.global}</b></li>`).join('')}</ol></div>`; }).join('')}</div>`
+      : `<div class="card">${vacio('i-trophy', 'Aún no hay cuadro de honor', 'Aparece cuando termine el primer simulacro.')}</div>`}${corp}`;
 }
 
 // ---------- Simulacro con modo sin conexión ----------
@@ -294,25 +380,51 @@ async function entregar(porTiempo) {
   pintarExamen();
 }
 
-// ---------- Resultados ----------
+// ---------- Resultados ICFES: puntaje, puesto, evolución y medallas ----------
+function medallas(res, racha) {
+  const ult = res[0];
+  const sube = res.length > 1 && res[0].global - res[1].global >= 20;
+  const nivel4 = ult && ult.areas.some(x => nivel(x.area, x.puntaje) === 4);
+  const L = [
+    ['i-star', 'Primer simulacro', 'Presentó su primer simulacro', res.length >= 1, 'var(--a1)'],
+    ['i-up', 'En ascenso', 'Subió 20 puntos o más', sube, 'var(--a3)'],
+    ['i-trophy', 'Podio', 'Entre los 3 mejores del grupo', ult && ult.puesto <= 3, '#D9A13A'],
+    ['i-medal', 'Nivel 4', 'Nivel 4 en al menos un área', nivel4, 'var(--a4)'],
+    ['i-results', '300 o más', 'Puntaje global de 300 o más', ult && ult.global >= 300, 'var(--a2)'],
+    ['i-fire', 'Constante', '5 días seguidos practicando', racha >= 5, 'var(--coral)'],
+  ];
+  return `<div class="badges">${L.map(([i, t, d, ok, c]) => `<div class="badge ${ok ? '' : 'locked'}" style="--bc:${c}"><span class="bm">${ic(i, 28)}</span><b>${t}</b><span class="xs muted">${d}</span></div>`).join('')}</div>`;
+}
+function evolucionEst(res) {
+  const D = [...res].reverse(); if (D.length < 2) return '<p class="small muted">Con dos simulacros o más verá aquí su evolución.</p>';
+  const W = 720, H = 220, pl = 40, pr = 20, pt = 22, pb = 30, max = 500;
+  const x = i => pl + i * (W - pl - pr) / (D.length - 1), y = v => pt + (1 - v / max) * (H - pt - pb);
+  const ln = D.map((d, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(d.global).toFixed(1)}`).join('');
+  return `<svg viewBox="0 0 ${W} ${H}" class="evo" role="img" aria-label="Mi puntaje global en cada simulacro">${[0, 250, 500].map(t => `<line x1="${pl}" x2="${W - pr}" y1="${y(t)}" y2="${y(t)}" stroke="var(--line)"/><text x="${pl - 8}" y="${y(t) + 4}" text-anchor="end" font-size="11" fill="var(--muted)">${t}</text>`).join('')}
+    <path d="${ln}L${x(D.length - 1)},${y(0)}L${x(0)},${y(0)}Z" fill="var(--brand-soft)" opacity=".6"/><path d="${ln}" fill="none" stroke="var(--brand)" stroke-width="2.5" stroke-linejoin="round"/>
+    ${D.map((d, i) => `<circle cx="${x(i)}" cy="${y(d.global)}" r="5" fill="var(--brand)" stroke="var(--surface)" stroke-width="2"><title>${esc(d.simulacro)}: ${d.global}</title></circle><text x="${x(i)}" y="${y(d.global) - 11}" text-anchor="middle" font-size="12" font-weight="700" fill="var(--ink)">${d.global}</text><text x="${x(i)}" y="${H - 9}" text-anchor="middle" font-size="11" fill="var(--muted)">${esc(String(d.simulacro).replace('Simulacro ', 'S'))}</text>`).join('')}</svg>`;
+}
 async function resultados({ S, main }) {
   main.innerHTML = cargando();
-  const res = await rpc('mis_resultados');
-  if (!res.length) { main.innerHTML = `${head('Mis resultados', 'Resultados')}<div class="card">${vacio('i-results', 'Todavía no hay resultados', 'Los verá cuando termine el tiempo de su primer simulacro.')}</div>${corp}`; return; }
+  const [res, plan] = await Promise.all([rpc('mis_resultados'), rpc('mi_plan').catch(() => null)]);
+  if (!res.length) { main.innerHTML = `${head('Simulacros ICFES', 'Mis resultados')}<div class="card">${vacio('i-results', 'Todavía no hay resultados', 'Los verá cuando termine el tiempo de su primer simulacro.')}</div>${corp}`; return; }
   let k = 0;
   const pintar = () => {
     const r = res[k], vals = [0, 1, 2, 3, 4].map(i => (r.areas.find(x => x.area === i) || { puntaje: 0 }).puntaje);
-    const lugar = r.mitad_inferior
-      ? `<div style="display:grid;gap:6px"><b style="font-size:18px">Está en la mitad del grupo que más puede avanzar.</b><p class="small muted">Su área más fuerte fue ${SHORT[vals.indexOf(Math.max(...vals))]}. Para el próximo simulacro, enfóquese en ${SHORT[vals.indexOf(Math.min(...vals))]}.</p></div>`
-      : `<div class="row" style="gap:16px;flex-wrap:nowrap"><div class="medal"><div>${r.puesto}.º<small>puesto</small></div></div><div><b style="font-size:18px">Puesto ${r.puesto} de ${r.total}</b><p class="small muted">en su grupo.</p></div></div>`;
-    main.innerHTML = `${head(fecha(r.fecha), 'Mis resultados', res.length > 1 ? `<div class="field" style="width:220px"><label for="rsel">Simulacro</label><select id="rsel">${res.map((x, i) => `<option value="${i}" ${i === k ? 'selected' : ''}>${esc(x.simulacro)}</option>`).join('')}</select></div>` : '')}
-      <div class="rcard fade"><div class="in"><div style="justify-self:center">${rings5(vals, 220)}</div>
-        <div style="display:grid;gap:14px"><span class="lbl">${esc(r.simulacro)} · puntaje global</span><div class="row" style="gap:12px;align-items:flex-end"><span class="big-score">${r.global}</span><span class="muted" style="padding-bottom:8px">de 500</span></div>
-        <div class="row">${vals.map((v, i) => `<span class="chip" style="background:${soft(i)};color:${col(i)}"><span class="d" style="background:${col(i)}">${ic(AICON[i], 12)}</span>${SHORT[i]} ${v}</span>`).join('')}</div>
-        <p class="xs muted">Se calcula como el ICFES: las cuatro áreas pesan 3 veces e Inglés 1 vez. Promedio de su grupo: ${r.grupo_promedio ?? '—'}.</p></div></div></div>
-      <div class="bento"><div class="card w5"><span class="lbl">Mi posición en el grupo</span>${lugar}</div>
-        <div class="card w7"><span class="lbl">Por área</span>${vals.map((v, i) => `<div style="display:grid;grid-template-columns:150px minmax(0,1fr) 40px 80px;gap:10px;align-items:center"><span class="row" style="gap:8px;flex-wrap:nowrap">${aico(i, 28)}<b class="small">${AREAS[i]}</b></span>${barra(v, col(i))}<b class="num" style="text-align:right">${v}</b>${lvlTag(i, v)}</div>`).join('')}<p class="xs muted">No se muestran las respuestas correctas ni cuáles acertó.</p></div></div>${corp}`;
-    const sel = $('#rsel'); if (sel) sel.onchange = () => { k = +sel.value; pintar(); };
+    main.innerHTML = `${head(`${esc(r.simulacro)} · ${fecha(r.fecha)}`, 'Mis resultados', `${res.length > 1 ? `<div class="field"><label for="rsel">Simulacro</label><select id="rsel">${res.map((x, i) => `<option value="${i}" ${i === k ? 'selected' : ''}>${esc(x.simulacro)}</option>`).join('')}</select></div>` : ''}<button class="btn sec" type="button" data-ir="honor">${ic('i-trophy', 18)}Cuadro de honor</button>`,
+        { sub: `Puntaje global <b>${r.global}</b> de 500. Promedio de su grupo: ${r.grupo_promedio ?? '—'}.` })}
+      <div class="grid g3">
+        <div class="card tile2"><span class="lbl">Puntaje global</span><span class="v"><span data-contar="${r.global}">${r.global}</span><span class="muted" style="font-size:18px"> / 500</span></span><span class="xs muted">Las cuatro áreas pesan 3 veces e Inglés 1 vez, como el ICFES.</span></div>
+        <div class="card tile2" style="--tc:var(--coral)"><span class="lbl">Puesto en el grupo</span><div class="row" style="gap:14px;flex-wrap:nowrap"><div class="medal"><div>${r.puesto}.º<small>puesto</small></div></div><span class="small muted">de ${r.total} estudiantes</span></div></div>
+        <div class="card tile2" style="--tc:var(--a4)"><span class="lbl">Puesto en el colegio</span><span class="v">${r.puesto_colegio}.º<span class="muted" style="font-size:18px"> de ${r.total_colegio}</span></span><span class="xs muted">Entre quienes presentaron este simulacro</span></div>
+      </div>
+      <div class="bento">
+        <div class="card w5" style="place-items:center">${rings5(vals, 220, r.global, 'global')}</div>
+        <div class="card w7"><span class="lbl">Por área</span>${vals.map((v, i) => `<div style="display:grid;grid-template-columns:150px minmax(0,1fr) 40px 80px;gap:10px;align-items:center"><span class="row" style="gap:8px;flex-wrap:nowrap">${aico(i, 28)}<b class="small">${AREAS[i]}</b></span>${barra(v, col(i))}<b class="num" style="text-align:right">${v}</b>${lvlTag(i, v)}</div>`).join('')}<p class="xs muted">En los simulacros no se muestran las respuestas correctas. Practique sus áreas débiles en el plan de refuerzo.</p></div>
+        <div class="card w12"><div><span class="lbl">Evolución</span><h2>Mi puntaje en cada simulacro</h2></div>${evolucionEst(res)}</div>
+        <div class="card w12"><div><span class="lbl">Logros</span><h2>Mis medallas</h2></div>${medallas(res, plan?.racha || 0)}</div>
+      </div>${corp}`;
+    const sel = $('#rsel'); if (sel) sel.onchange = () => { k = +sel.value; pintar(); document.dispatchEvent(new Event('f-pintado')); };
   };
   pintar();
 }

@@ -1,5 +1,5 @@
 // FORTALECER · pantallas del administrador (y de soporte, en modo consulta)
-import { $, $$, esc, ic, AREAS, SHORT, col, soft, aico, chip, toast, errorMsg, modal, cerrarModal, confirmar, head, kpi, cargando, vacio, corp, field, selectField, fecha, fechaHora, pill, iniciales, escudo, heat, lvLegend, barra, descargarExcel, leerExcel, normal, num } from './lib.js';
+import { $, $$, esc, ic, AREAS, SHORT, col, soft, aico, chip, toast, errorMsg, modal, cerrarModal, confirmar, head, kpi, cargando, vacio, corp, field, selectField, fecha, fechaHora, pill, iniciales, escudo, heat, lvLegend, barra, descargarExcel, leerExcel, normal, num, GRADOS, notaTxt, volverBtn } from './lib.js';
 import { sb, q, rpc, usuarios, subirArchivo } from './api.js';
 import { reporteAplicacion, listaAplicaciones } from './reportes.js';
 import { avisosHTML, conectarAvisos } from './avisos.js';
@@ -21,7 +21,7 @@ const estPill = e => pill(e, { 'Lista': 'p-ok', 'Por revisar': 'p-warn', 'Repeti
 
 function credenciales(lista, titulo) {
   modal({ icon: 'i-key', tono: 'ok', titulo, sub: 'Entregue estos datos. En el primer ingreso deberá cambiar la contraseña.', ancho: true,
-    cuerpo: `<div class="tw"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Contraseña inicial</th></tr></thead><tbody>${lista.map(c => `<tr><td>${esc(c.nombre)}</td><td><b>${esc(c.usuario)}</b></td><td class="num">${esc(c.clave)}</td></tr>`).join('')}</tbody></table></div><p class="xs muted">Dirección para ingresar: <b>${esc(location.origin)}</b></p>`,
+    cuerpo: `<div class="tw"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Contraseña inicial</th></tr></thead><tbody>${lista.map(c => `<tr><td>${esc(c.nombre)}</td><td><b>${esc(c.usuario)}</b></td><td class="num">${esc(c.clave)}</td></tr>`).join('')}</tbody></table></div><p class="xs muted">Dirección para ingresar: <b>${esc((location.origin + location.pathname))}</b></p>`,
     pie: `<button class="btn pri" type="button" data-cerrar>Listo</button>` });
 }
 
@@ -31,18 +31,28 @@ async function inicio({ S, main, recargar }) {
   const [r, avHTML, cols] = await Promise.all([rpc('resumen_admin'), avisosHTML({ S, gestionar: ADMIN }), ADMIN ? q(sb.from('colegios').select('id,nombre').order('nombre')) : []]);
   const pr = r.preguntas || {};
   const minArea = Math.min(...r.por_area.map(a => a.listas));
-  main.innerHTML = `<div class="bento">
-    <section class="hero w12"><div style="display:grid;gap:12px"><span class="eyebrow">Panel general · ${fecha(new Date())}</span><h1>${r.aplicaciones_hoy ? `Hoy hay ${r.aplicaciones_hoy} simulacros en curso.` : 'Bienvenido al panel de FORTALECER.'}</h1><p>${num(r.colegios)} colegios, ${num(r.estudiantes)} estudiantes y ${num((pr['Lista'] || 0) + (pr['Por revisar'] || 0))} preguntas distintas en el banco.</p>
-      <div class="row">${ADMIN ? `<button class="btn hot" type="button" data-ir="colegios">${ic('i-school')}Colegios</button>` : ''}<button class="btn glass" type="button" data-ir="reportes">${ic('i-results')}Reportes globales</button></div></div>
-      <div class="count"><div><b>${r.colegios_activos}</b><span>colegios activos</span></div><div><b>${num(r.estudiantes)}</b><span>estudiantes</span></div><div><b>${num(r.intentos)}</b><span>simulacros presentados</span></div></div></section>
-    ${!r.colegios ? `<div class="card w12"><div class="alert a-info">${ic('i-info')}<div><b>Primeros pasos</b>1) Cargue el banco inicial en <b>Preguntas</b>. 2) Arme y publique los simulacros en <b>Simulacros</b>. 3) Cree el primer colegio con su coordinador en <b>Colegios</b>.</div></div></div>` : ''}
-    <div class="card w7"><div class="row between"><div><span class="lbl">Banco de preguntas</span><h2>Preguntas listas por área</h2></div><span class="pill p-brand">Alcanzan para ${Math.floor(minArea / 25)} simulacros</span></div>
+  const [alertas, rg] = await Promise.all([rpc('alertas_colegios').catch(() => []), rpc('reporte_global').catch(() => [])]);
+  const con = rg.filter(x => x.presentaron).sort((a, b) => b.global - a.global);
+  const maxG = Math.max(500, ...con.map(x => x.global));
+  main.innerHTML = `${head(`Panel general · ${fecha(new Date())}`, r.aplicaciones_hoy ? `Hoy hay ${r.aplicaciones_hoy} simulacros en curso.` : `Hola, ${esc(S.perfil.nombres.split(' ')[0])}.`, `${ADMIN ? `<button class="btn pri" type="button" data-ir="colegios">${ic('i-school', 18)}Colegios</button>` : ''}<button class="btn sec" type="button" data-ir="reportes">${ic('i-results', 18)}Reportes globales</button>`,
+      { sub: `${num(r.colegios)} colegios, ${num(r.estudiantes)} estudiantes y ${num((pr['Lista'] || 0) + (pr['Por revisar'] || 0))} preguntas en el banco ICFES.` })}
+    <div class="grid g4">
+      <div class="card tile2"><span class="lbl">Colegios activos</span><span class="v"><span data-contar="${r.colegios_activos}">${r.colegios_activos}</span></span><span class="xs muted">de ${r.colegios} registrados</span></div>
+      <div class="card tile2" style="--tc:var(--a3)"><span class="lbl">Estudiantes</span><span class="v"><span data-contar="${r.estudiantes}">${num(r.estudiantes)}</span></span><span class="xs muted">${r.docentes} docentes · ${r.coordinadores} coordinadores</span></div>
+      <div class="card tile2" style="--tc:var(--coral)"><span class="lbl">Simulacros presentados</span><span class="v"><span data-contar="${r.intentos}">${num(r.intentos)}</span></span><span class="xs muted">${r.simulacros_publicados} de 20 simulacros publicados</span></div>
+      <div class="card tile2" style="--tc:var(--a4)"><span class="lbl">Exámenes de docentes</span><span class="v"><span data-contar="${r.examenes || 0}">${num(r.examenes || 0)}</span></span><span class="xs muted">${num(r.intentos_doc || 0)} entregados</span></div>
+    </div>
+    <div class="bento">
+    ${!r.colegios ? `<div class="card w12"><div class="alert a-info">${ic('i-info')}<div><b>Primeros pasos</b>1) Cargue el banco inicial en <b>Banco ICFES › Preguntas</b>. 2) Arme y publique los simulacros en <b>Banco ICFES › Simulacros</b>. 3) Cree el primer colegio con su coordinador en <b>Colegios</b>.</div></div></div>` : ''}
+    <div class="card w5" style="gap:10px"><div><span class="lbl">Atención</span><h2>Colegios con alertas</h2></div>
+      ${alertas.length ? alertas.map(a => `<div class="alerta-i ${a.tipo === 'sospechas' ? 'bad' : 'warn'}"><b class="t">${a.tipo === 'sospechas' ? 'Sospechas' : 'Sin uso'}</b><span style="flex:1"><b>${esc(a.colegio)}</b><br><span class="xs muted">${a.tipo === 'sospechas' ? `${a.cantidad} exámenes o simulacros cerrados por copia esta semana` : `Nadie ha entrado en ${a.dias} días`}</span></span>${ADMIN ? `<button class="btn ghost sm" type="button" data-ir="colegios/${a.colegio_id}">Abrir</button>` : ''}</div>`).join('') : `<div class="alert a-ok">${ic('i-sync')}<div><b>Sin alertas</b>Todos los colegios están activos y sin sospechas.</div></div>`}
+      ${pr['Por revisar'] ? `<div class="alert a-warn">${ic('i-bank')}<div><b>${num(pr['Por revisar'])} preguntas por revisar</b>Tienen figuras o símbolos que hay que comparar con el cuadernillo.</div></div>` : ''}
+      ${r.sin_autorizacion ? `<div class="alert a-warn">${ic('i-users')}<div><b>${r.sin_autorizacion} estudiantes sin autorización del acudiente</b></div></div>` : ''}</div>
+    <div class="card w7"><div class="row between"><div><span class="lbl">Banco ICFES</span><h2>Preguntas listas por área</h2></div><span class="pill p-brand">${r.simulacros_armados} simulacros armados · alcanzan para ${Math.floor(minArea / 25)}</span></div>
       <div style="display:grid;gap:12px">${r.por_area.map(a => `<div style="display:grid;grid-template-columns:120px minmax(0,1fr) 110px;gap:10px;align-items:center"><span class="row" style="gap:8px;flex-wrap:nowrap">${aico(a.area, 28)}<b class="small">${SHORT[a.area]}</b></span>${barra(a.listas, col(a.area), 500)}<span class="xs muted num" style="text-align:right"><b>${a.listas}</b> listas · ${a.revisar} por revisar</span></div>`).join('')}</div>
       <p class="xs muted">Para 20 simulacros se necesitan 500 por área (25 por simulacro).</p></div>
-    <div class="card w5" style="gap:12px"><span class="lbl">Atención</span>
-      ${pr['Por revisar'] ? `<div class="alert a-warn">${ic('i-bank')}<div><b>${num(pr['Por revisar'])} preguntas por revisar</b>Tienen figuras, tablas o símbolos que hay que comparar con el cuadernillo.</div></div>` : ''}
-      ${r.sin_autorizacion ? `<div class="alert a-warn">${ic('i-users')}<div><b>${r.sin_autorizacion} estudiantes sin autorización del acudiente</b></div></div>` : ''}
-      <div class="alert a-info">${ic('i-users')}<div><b>${r.coordinadores} coordinadores · ${r.docentes} docentes</b></div></div></div>
+    <div class="card w12"><div class="row between"><div><span class="lbl">Comparación</span><h2>Puntaje global promedio por colegio</h2></div><button class="btn ghost sm" type="button" data-ir="reportes">Ver detalle</button></div>
+      ${con.length ? `<div style="display:grid;gap:10px">${con.map((x, i) => `<div style="display:grid;grid-template-columns:28px minmax(140px,240px) minmax(0,1fr) 50px;gap:12px;align-items:center"><b class="num">${i + 1}</b><span class="row" style="gap:8px;flex-wrap:nowrap">${escudo(x.escudo_url, x.nombre, 28)}<span class="small" style="overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(x.nombre)}</span></span>${barra(x.global, 'var(--brand)', maxG)}<b class="num" style="text-align:right">${x.global}</b></div>`).join('')}</div>` : vacio('i-results', 'Aún no hay resultados para comparar', 'Cuando los colegios apliquen simulacros, aparecerán aquí.')}</div>
     <div class="card w12"><div><span class="lbl">Registro de actividad</span><h2>Quién hizo qué</h2></div>
       ${r.actividad.length ? `<div class="log">${r.actividad.map(l => `<div class="logi"><span class="aico" style="width:36px;height:36px;background:var(--surface-2);color:var(--brand)">${ic('i-sync', 17)}</span><div><span class="small"><b>${esc(l.usuario)}</b> ${esc(l.accion)}${l.detalle ? ` · ${esc(l.detalle)}` : ''}</span><div class="xs muted">${fechaHora(l.creado_en)}</div></div></div>`).join('')}</div>` : vacio('i-sync', 'Sin actividad todavía')}</div>
     ${avHTML}
@@ -68,12 +78,13 @@ async function colegios({ main, go, recargar }) {
 
 function asistenteColegio(c, gruposActuales, alTerminar) {
   const d = { nombre: c?.nombre || '', dane: c?.dane || '', municipio: c?.municipio || '', departamento: c?.departamento || '', sede: c?.sede || 'Sede principal', escudo_url: c?.escudo_url || null, archivo: null,
-    grados: { 9: [], 10: [], 11: [] }, cn: '', ca: '', ce: '', cd: '' };
+    grados: Object.fromEntries(GRADOS.map(k => [k, []])), cn: '', ca: '', ce: '', cd: '',
+    color: c?.color || '#2B3A8C', escala_min: c?.escala_min ?? 1, escala_max: c?.escala_max ?? 5, nota_aprobar: c?.nota_aprobar ?? 3, decimales: c?.decimales ?? 1 };
   gruposActuales.forEach(g => d.grados[g.grado].push({ id: g.id, nombre: g.nombre }));
-  if (!c) d.grados = { 9: [], 10: [{ nombre: 'A' }], 11: [{ nombre: 'A' }] };
+  if (!c) { d.grados[10] = [{ nombre: 'A' }]; d.grados[11] = [{ nombre: 'A' }]; }
   const borrados = [];
   let paso = 0; const pasos = c ? ['Colegio y escudo', 'Grados y grupos'] : ['Colegio y escudo', 'Grados y grupos', 'Coordinador'];
-  const guardarCampos = () => { ['nombre', 'dane', 'municipio', 'departamento', 'sede', 'cn', 'ca', 'ce', 'cd'].forEach(k => { const el = $('#w-' + k); if (el) d[k] = el.value.trim(); }); };
+  const guardarCampos = () => { ['nombre', 'dane', 'municipio', 'departamento', 'sede', 'cn', 'ca', 'ce', 'cd', 'escala_min', 'escala_max', 'nota_aprobar', 'decimales'].forEach(k => { const el = $('#w-' + k); if (el) d[k] = el.value.trim(); }); };
   const f = (k, l, extra = '', hint = '') => field('w-' + k, l, d[k], extra, hint);
   const pintar = () => {
     const stepper = `<ol class="stepper">${pasos.map((t, i) => `<li class="${i < paso ? 'done' : i === paso ? 'on' : ''}"><span>${i < paso ? '✓' : i + 1}</span>${t}</li>`).join('')}</ol>`;
@@ -81,8 +92,10 @@ function asistenteColegio(c, gruposActuales, alTerminar) {
     if (paso === 0) cuerpo = `<div class="crestup"><div class="prev">${d.escudo_url ? `<img src="${esc(d.escudo_url)}" alt="Escudo">` : `<span class="ph">${ic('i-school', 34)}<small>Sin escudo</small></span>`}</div>
         <div style="display:grid;gap:8px;align-content:center"><b>Escudo del colegio</b><span class="xs muted">Imagen PNG o JPG, idealmente cuadrada. Aparece en todas las pantallas del colegio y en los boletines.</span>
         <div class="row"><label class="btn sec sm" for="w-file">${ic('i-upload', 15)}Subir escudo</label><input id="w-file" type="file" accept="image/png,image/jpeg,image/webp" hidden>${d.escudo_url ? `<button class="btn ghost sm" type="button" id="w-rm">Quitar</button>` : ''}</div></div></div>
-      <div class="grid" style="gap:12px;align-items:start;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">${f('nombre', 'Nombre del colegio', 'required')}${f('dane', 'Código DANE', 'inputmode="numeric"', 'Opcional.')}${f('municipio', 'Municipio')}${f('departamento', 'Departamento')}${f('sede', 'Sede')}</div>`;
-    if (paso === 1) cuerpo = `<p class="small muted">Cree los grupos de cada grado. El coordinador también puede crearlos o cambiarlos después.</p><div class="gradelist">${[9, 10, 11].map(k => `<div class="graderow"><b style="min-width:90px;font-size:16px">Grado ${k}.°</b><div class="row" style="gap:6px;flex:1">${d.grados[k].map((x, i) => `<span class="gchip">${k}-${esc(x.nombre)}<button type="button" data-rmg="${k}:${i}" aria-label="Quitar grupo">×</button></span>`).join('') || '<span class="xs muted">Sin grupos</span>'}<button class="btn sec sm" type="button" data-addg="${k}">+ Grupo</button></div></div>`).join('')}</div>`;
+      <div class="grid" style="gap:12px;align-items:start;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">${f('nombre', 'Nombre del colegio', 'required')}${f('dane', 'Código DANE', 'inputmode="numeric"', 'Opcional.')}${f('municipio', 'Municipio')}${f('departamento', 'Departamento')}${f('sede', 'Sede')}</div>
+      <div><span class="lbl">Color del colegio</span><div class="swatches" style="margin-top:8px">${['#2B3A8C', '#1F6F5C', '#8C1C2B', '#6A2C91', '#0E5E8A', '#9A4A00', '#2F4858', '#14532D'].map(x => `<button type="button" data-wcolor="${x}" style="--sw:${x}" aria-label="Color ${x}" aria-pressed="${x.toLowerCase() === d.color.toLowerCase()}"></button>`).join('')}<input type="color" id="w-color" value="${esc(d.color)}" aria-label="Otro color"></div></div>
+      <div><span class="lbl">Escala de notas</span><div class="grid" style="gap:10px;margin-top:8px;grid-template-columns:repeat(auto-fit,minmax(120px,1fr))">${f('escala_min', 'Mínima', 'type="number" step="0.1"')}${f('escala_max', 'Máxima', 'type="number" step="0.1"')}${f('nota_aprobar', 'Aprueba con', 'type="number" step="0.1"')}${selectField('w-decimales', 'Decimales', [[0, 'Ninguno'], [1, 'Uno'], [2, 'Dos']], d.decimales)}</div><span class="xs muted">El coordinador también puede cambiarla.</span></div>`;
+    if (paso === 1) cuerpo = `<p class="small muted">Cree los grupos de cada grado, de 1.° a 11.°. Los simulacros ICFES son solo para 9.°, 10.° y 11.°. El coordinador también puede crearlos o cambiarlos después.</p><div class="gradelist">${GRADOS.map(k => `<div class="graderow"><b style="min-width:90px;font-size:16px">Grado ${k}.°</b><div class="row" style="gap:6px;flex:1">${d.grados[k].map((x, i) => `<span class="gchip">${k}-${esc(x.nombre)}<button type="button" data-rmg="${k}:${i}" aria-label="Quitar grupo">×</button></span>`).join('') || '<span class="xs muted">Sin grupos</span>'}<button class="btn sec sm" type="button" data-addg="${k}">+ Grupo</button></div></div>`).join('')}</div>`;
     if (paso === 2) cuerpo = `<div class="grid" style="gap:12px;align-items:start;grid-template-columns:repeat(auto-fit,minmax(210px,1fr))">${f('cn', 'Nombres del coordinador', 'required')}${f('ca', 'Apellidos', 'required')}${f('ce', 'Correo', 'type="email" required', 'Será su usuario.')}${f('cd', 'Número de documento', 'inputmode="numeric" required', 'Será su contraseña inicial.')}</div>
       <div class="alert a-info">${ic('i-info')}<div><b>Al crear el colegio verá el usuario y la contraseña del coordinador</b>para entregárselos. Puede agregar más coordinadores después.</div></div>`;
     const pie = `${paso ? `<button class="btn sec" type="button" id="w-atras">← Atrás</button>` : `<button class="btn sec" type="button" data-cerrar>Cancelar</button>`}${paso < pasos.length - 1 ? `<button class="btn pri" type="button" id="w-sig">Siguiente →</button>` : `<button class="btn hot" type="button" id="w-fin" style="font-size:14.5px;padding:12px 20px">${c ? 'Guardar cambios' : 'Crear colegio'}</button>`}`;
@@ -91,7 +104,9 @@ function asistenteColegio(c, gruposActuales, alTerminar) {
     const rm = $('#w-rm'); if (rm) rm.onclick = () => { guardarCampos(); d.archivo = null; d.escudo_url = null; pintar(); };
     const at = $('#w-atras'); if (at) at.onclick = () => { guardarCampos(); paso--; pintar(); };
     const sg = $('#w-sig'); if (sg) sg.onclick = () => { guardarCampos(); if (paso === 0 && !d.nombre) return toast('Escriba el nombre del colegio.', 'error'); paso++; pintar(); };
+    const wc = $('#w-color'); if (wc) wc.oninput = () => { d.color = wc.value; $$('[data-wcolor]').forEach(x => x.setAttribute('aria-pressed', 'false')); };
     w.onclick = e => { const b = e.target.closest('button'); if (!b) return;
+      if (b.dataset.wcolor) { guardarCampos(); d.color = b.dataset.wcolor; pintar(); return; }
       if (b.dataset.addg) { const L = d.grados[b.dataset.addg]; const letras = 'ABCDEFGHIJKL'; const usadas = L.map(x => x.nombre); L.push({ nombre: [...letras].find(l => !usadas.includes(l)) || String(L.length + 1) }); pintar(); }
       if (b.dataset.rmg) { const [k, i] = b.dataset.rmg.split(':'); const x = d.grados[k].splice(+i, 1)[0]; if (x.id) borrados.push(x.id); pintar(); } };
     const fin = $('#w-fin'); if (fin) fin.onclick = async () => {
@@ -101,11 +116,14 @@ function asistenteColegio(c, gruposActuales, alTerminar) {
       try {
         let url = d.archivo ? await subirArchivo('escudos', d.archivo, normal(d.nombre).replace(/[^a-z0-9]+/g, '-').slice(0, 40)) : d.escudo_url;
         const datos = { nombre: d.nombre, dane: d.dane || null, municipio: d.municipio, departamento: d.departamento, sede: d.sede, escudo_url: url };
+        const esc_ = { color: d.color, escala_min: +d.escala_min, escala_max: +d.escala_max, nota_aprobar: +d.nota_aprobar, decimales: +d.decimales };
+        if (!(esc_.escala_max > esc_.escala_min) || esc_.nota_aprobar < esc_.escala_min || esc_.nota_aprobar > esc_.escala_max) throw new Error('Revise la escala: la máxima debe ser mayor que la mínima y la nota para aprobar debe estar entre las dos.');
         let colegio;
         if (c) colegio = (await q(sb.from('colegios').update(datos).eq('id', c.id).select().single()));
         else if (d.creado) colegio = d.creado; // reintento: el colegio ya quedó guardado
         else { colegio = await q(sb.from('colegios').insert(datos).select().single()); d.creado = colegio; }
-        const nuevos = [9, 10, 11].flatMap(k => d.grados[k].filter(x => !x.id).map(x => ({ colegio_id: colegio.id, grado: k, nombre: x.nombre })));
+        await rpc('colegio_ajustes', { p_colegio: colegio.id, p: esc_ });
+        const nuevos = GRADOS.flatMap(k => d.grados[k].filter(x => !x.id).map(x => ({ colegio_id: colegio.id, grado: k, nombre: x.nombre })));
         if (nuevos.length && !d.gruposListos) { await q(sb.from('grupos').insert(nuevos)); if (!c) d.gruposListos = true; }
         for (const id of borrados) { const { error } = await sb.from('grupos').delete().eq('id', id); if (error) toast('Un grupo con estudiantes no se pudo quitar.', 'error'); }
         let cred = null;
@@ -125,10 +143,7 @@ async function colegioDetalle({ S, main, params, go, recargar }) {
   const [c, grupos, perf, apls] = await Promise.all([q(sb.from('colegios').select('*').eq('id', id).single()), q(sb.from('grupos').select('*').eq('colegio_id', id)), q(sb.from('perfiles').select('*').eq('colegio_id', id)), q(sb.from('aplicaciones').select('*').eq('colegio_id', id).order('inicio', { ascending: false }))]);
   grupos.sort((a, b) => a.grado - b.grado || a.nombre.localeCompare(b.nombre));
   const coords = perf.filter(p => p.rol === 'coordinador'), est = perf.filter(p => p.rol === 'estudiante'), docs = perf.filter(p => p.rol === 'docente');
-  main.innerHTML = `<div class="row"><button class="btn ghost sm" type="button" data-ir="colegios">← Colegios</button></div>
-    <section class="hero" style="grid-template-columns:auto minmax(0,1fr) auto"><div style="background:#fff;border-radius:22px;padding:10px;width:96px;height:96px;display:grid;place-items:center">${escudo(c.escudo_url, c.nombre, 76)}</div>
-      <div style="display:grid;gap:8px"><span class="eyebrow">${c.activo ? 'Activo' : 'Inactivo'} · ${esc([c.municipio, c.departamento].filter(Boolean).join(', '))}</span><h1>${esc(c.nombre)}</h1><p>${esc(c.sede || '')}${c.dane ? ' · DANE ' + esc(c.dane) : ''}</p></div>
-      ${ADMIN ? `<div class="row"><button class="btn glass" type="button" data-editar>${ic('i-edit', 16)}Editar</button><button class="btn glass" type="button" data-activo>${c.activo ? 'Desactivar' : 'Activar'}</button></div>` : ''}</section>
+  main.innerHTML = `${head(`${c.activo ? 'Activo' : 'Inactivo'} · ${esc([c.municipio, c.departamento].filter(Boolean).join(', '))}`, esc(c.nombre), ADMIN ? `<button class="btn sec" type="button" data-editar>${ic('i-edit', 16)}Editar</button><button class="btn sec" type="button" data-activo>${c.activo ? 'Desactivar' : 'Activar'}</button>` : '', { volver: volverBtn('colegios', 'Colegios'), sub: `${esc(c.sede || '')}${c.dane ? ' · DANE ' + esc(c.dane) : ''} · escala de ${notaTxt(c.escala_min, c.decimales)} a ${notaTxt(c.escala_max, c.decimales)} <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${esc(c.color || '#2B3A8C')};vertical-align:-2px;border:2px solid #fff"></span>` })}
     <div class="grid g4">${kpi('i-users', 'var(--brand)', 'var(--brand-soft)', est.length, 'estudiantes')}${kpi('i-school', 'var(--a3)', 'var(--a3s)', grupos.length, 'grupos')}${kpi('i-teacher', 'var(--a4)', 'var(--a4s)', docs.length, 'docentes')}${kpi('i-exam', 'var(--a2)', 'var(--a2s)', apls.length, 'simulacros programados')}</div>
     <div class="bento">
       <div class="card w6"><div><span class="lbl">Grados y grupos</span><h2>${grupos.length} grupos</h2></div><div class="tw"><table><thead><tr><th>Grupo</th><th class="r">Estudiantes</th><th class="r">Sin autorización</th></tr></thead><tbody>${grupos.map(g => `<tr><td><b>${esc(grupoTxt(g))}</b></td><td class="r num">${est.filter(e => e.grupo_id === g.id).length}</td><td class="r num">${est.filter(e => e.grupo_id === g.id && !e.autorizacion_acudiente).length}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">Sin grupos</td></tr>`}</tbody></table></div></div>

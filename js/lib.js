@@ -76,7 +76,23 @@ export function confirmar({ titulo, texto, si = 'Confirmar', tono = 'warn', icon
 }
 
 // ---------- Piezas de interfaz ----------
-export const head = (eyebrow, titulo, derecha = '') => `<div class="phead"><div class="t"><span class="lbl">${eyebrow}</span><h1>${titulo}</h1></div>${derecha}</div>`;
+// Franja de color al inicio de cada pantalla. «volver» va arriba del título; «derecha», los botones.
+export const head = (eyebrow, titulo, derecha = '', { volver = '', sub = '' } = {}) => `<section class="band"><i class="blob b1"></i><i class="blob b2"></i><div class="band-in"><div class="t">${volver}${eyebrow ? `<span class="chipe">${eyebrow}</span>` : ''}<h1>${titulo}</h1>${sub ? `<p>${sub}</p>` : ''}</div>${derecha ? `<div class="acts">${derecha}</div>` : ''}</div></section>`;
+export const volverBtn = (ruta, texto) => `<button class="volver" type="button" data-ir="${ruta}">← ${texto}</button>`;
+// Notas en la escala del colegio
+export const notaTxt = (n, d = 1) => n == null || n === '' ? '—' : Number(n).toLocaleString('es-CO', { minimumFractionDigits: d, maximumFractionDigits: d });
+export const notaCls = (n, esc) => n == null ? 'mute' : Number(n) >= Number(esc?.aprobar ?? esc?.nota_aprobar ?? 3) ? 'ok' : 'bad';
+export const notaHTML = (n, esc) => `<span class="nota ${notaCls(n, esc)}">${notaTxt(n, esc?.decimales ?? 1)}</span>`;
+// El color de la franja y los botones es el del colegio
+export function aplicarColor(hex) {
+  const c = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex : '#2B3A8C';
+  document.documentElement.style.setProperty('--brand-base', c);
+  document.querySelector('meta[name=theme-color]')?.setAttribute('content', c);
+}
+export const notaRoja = (n, d = 1, sub = '', size = 170) => `<span class="nota-roja" style="width:${size}px;height:${Math.round(size * .86)}px;--nz:${Math.round(size * .32)}px" role="img" aria-label="Nota ${notaTxt(n, d)} ${esc(sub)}"><svg viewBox="0 0 100 86" aria-hidden="true"><path d="M58 6C84 6 98 24 95 44c-3 22-26 37-50 36C20 79 3 64 5 42 7 20 28 6 52 8c10 1 18 4 24 8"/></svg><span><b>${notaTxt(n, d)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></span>`;
+export const confeti = (n = 26) => `<div class="confeti" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<i style="left:${(i * 37) % 100}%;top:${(i * 13) % 35}%;background:${['#FF9A7A', '#FFD166', '#9BE7BF', '#FFFFFF', '#8C9BF0'][i % 5]};animation-delay:${(i % 7) * .09}s"></i>`).join('')}</div>`;
+export const GRADOS = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11];
+export const gradoTxt = g => `${g}.°`;
 export const kpi = (icon, c, cs, v, d) => `<div class="card kpi"><span class="ico" style="background:${cs};color:${c}">${ic(icon, 22)}</span><div><div class="v">${v}</div><div class="d">${d}</div></div></div>`;
 export const cargando = (t = 'Cargando…') => `<div class="card" style="place-items:center;padding:48px"><div class="spin"></div><span class="muted small">${t}</span></div>`;
 export const vacio = (icon, titulo, texto = '', accion = '') => `<div class="empty">${`<span class="aico" style="width:56px;height:56px;background:var(--surface-2);color:var(--muted)">${ic(icon, 26)}</span>`}<b>${titulo}</b>${texto ? `<span class="small muted">${texto}</span>` : ''}${accion}</div>`;
