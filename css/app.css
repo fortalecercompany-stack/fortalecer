@@ -828,3 +828,110 @@ html.en-login .loginwrap{margin-top:0}
 .top .who b{display:block;max-width:180px;overflow:hidden;text-overflow:ellipsis}
 @media (max-width:1180px){.top .who{display:none}}
 .top .brand{text-align:left}
+
+/* =====================================================================
+   FORTALECER 2.1 · diseño «vidrio»
+   Foto del colegio de fondo, oscurecida hacia el color del colegio, con dos luces suaves;
+   paneles de vidrio esmerilado, letra Figtree muy gruesa en los títulos y botones en píldora.
+   Es el tema oscuro (el de entrada). El tema claro conserva el diseño anterior.
+   ===================================================================== */
+:root{
+  --brand-base:#0F6F74;
+  --sans:"Figtree","Plus Jakarta Sans",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;
+  --display:"Figtree","Plus Jakarta Sans",system-ui,sans-serif;
+}
+h1,h2,h3,.band h1,.loginwrap form h2{font-family:var(--display);font-weight:900;letter-spacing:-.025em}
+h3{font-weight:800}
+
+:root[data-theme="dark"]{
+  --bg:#020617; --surface:rgba(255,255,255,.075); --surface-2:rgba(255,255,255,.055); --sunk:rgba(255,255,255,.09);
+  --line:rgba(255,255,255,.12); --card-line:rgba(255,255,255,.1);
+  --ink:#FFFFFF; --muted:rgba(226,232,240,.72);
+  --acc:color-mix(in srgb,var(--brand-base) 22%,#d6fbfc); --acc-2:color-mix(in srgb,var(--brand-base) 35%,#9fecee);
+  --brand:var(--acc-2); --brand-hover:#FFFFFF; --brand-soft:color-mix(in srgb,var(--brand-base) 30%,rgba(255,255,255,.06)); --brand-line:var(--acc-2);
+  --brand-hi:color-mix(in srgb,var(--brand-base) 70%,#7de7ea); --brand-2:color-mix(in srgb,var(--brand-base) 55%,#001214);
+  --coral-ink:#FFB59C; --ok:#7EE2B0; --ok-soft:rgba(126,226,176,.14); --warn:#F5C772; --warn-soft:rgba(245,199,114,.14); --bad:#FF9B92; --bad-soft:rgba(255,155,146,.14);
+  --info:#9fd3ff; --info-soft:rgba(159,211,255,.12);
+  --a1s:rgba(79,134,204,.2); --a2s:rgba(217,119,63,.2); --a3s:rgba(46,158,127,.22); --a4s:rgba(134,102,214,.22); --a5s:rgba(201,80,143,.22);
+  --glass:rgba(2,6,23,.55); --veil:rgba(2,6,23,.72);
+  --shadow:0 25px 50px -12px rgba(0,0,0,.35); --shadow-lg:0 25px 50px -12px rgba(0,0,0,.5); --shadow-up:0 25px 50px -12px rgba(0,0,0,.45);
+  --vidrio:blur(10px) saturate(1.2);
+}
+/* Fondo: foto + velo oscuro que termina en el color del colegio + dos luces */
+:root[data-theme="dark"] body{background:#020617}
+:root[data-theme="dark"] body::before{content:"";position:fixed;inset:0;z-index:-2;pointer-events:none;
+  background:linear-gradient(135deg,rgba(2,6,23,.92) 0%,rgba(15,23,42,.84) 50%,color-mix(in srgb,var(--brand-base) 45%,rgba(0,40,44,.8)) 100%),var(--fondo,none) center/cover no-repeat}
+:root[data-theme="dark"] body::after{content:"";position:fixed;inset:0;z-index:-1;pointer-events:none;
+  background:radial-gradient(300px 300px at 6% 18%,color-mix(in srgb,var(--brand-base) 40%,rgba(125,231,234,.18)),transparent 70%),radial-gradient(340px 340px at 96% 96%,color-mix(in srgb,var(--brand-base) 50%,rgba(0,169,173,.22)),transparent 70%);filter:blur(30px)}
+/* Barra superior: vidrio oscuro siempre */
+:root[data-theme="dark"] .top,html.con-band[data-theme="dark"]:not(.bajo) .top{background:rgba(2,6,23,.55);border-bottom:1px solid rgba(255,255,255,.08);backdrop-filter:var(--vidrio);-webkit-backdrop-filter:var(--vidrio);box-shadow:none;color:#fff}
+:root[data-theme="dark"] .tab{color:rgba(255,255,255,.72)}
+:root[data-theme="dark"] .tab:hover{color:#fff;background:rgba(255,255,255,.08)}
+:root[data-theme="dark"] .tab[aria-current="page"]{color:#fff}
+:root[data-theme="dark"] .tind{background:var(--acc-2)}
+/* Franja de cada pantalla: un gran panel de vidrio (como la página de referencia) */
+:root[data-theme="dark"] .band{width:auto;margin:18px 0 0;padding:clamp(26px,4vw,44px);border-radius:2rem;-webkit-mask:none;mask:none;
+  background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);backdrop-filter:var(--vidrio);-webkit-backdrop-filter:var(--vidrio);box-shadow:var(--shadow-lg)}
+:root[data-theme="dark"] .band::before,:root[data-theme="dark"] .band .blob{display:none}
+:root[data-theme="dark"] .band-in{padding:0;max-width:none}
+:root[data-theme="dark"] .band+*{margin-top:18px!important}
+:root[data-theme="dark"] .band+.alert,:root[data-theme="dark"] .band+p{margin-top:18px!important}
+:root[data-theme="dark"] .band p{color:rgba(226,232,240,.85)}
+:root[data-theme="dark"] .chipe{background:none;border:0;padding:0;color:var(--acc);font:600 13px var(--sans);letter-spacing:.3em;text-transform:uppercase}
+:root[data-theme="dark"] .chipe::before{display:none}
+:root[data-theme="dark"] .lbl{color:var(--acc);letter-spacing:.28em}
+/* Paneles y tarjetas de vidrio */
+:root[data-theme="dark"] .card,:root[data-theme="dark"] .qcard,:root[data-theme="dark"] .qe,:root[data-theme="dark"] .qnav{background:rgba(255,255,255,.075);border:1px solid rgba(255,255,255,.1);border-radius:2rem;box-shadow:var(--shadow);backdrop-filter:var(--vidrio);-webkit-backdrop-filter:var(--vidrio)}
+:root[data-theme="dark"] .card.lift,:root[data-theme="dark"] .tile2,:root[data-theme="dark"] .card.kpi{transition:transform .25s var(--ease),border-color .25s,background .25s}
+:root[data-theme="dark"] .card.lift:hover,:root[data-theme="dark"] .tile2:hover,:root[data-theme="dark"] .card.kpi:hover{transform:translateY(-4px);border-color:var(--acc-2);background:rgba(255,255,255,.11)}
+:root[data-theme="dark"] .pend,:root[data-theme="dark"] .alerta-i.mute,:root[data-theme="dark"] .honor li,:root[data-theme="dark"] .dd-it:hover,:root[data-theme="dark"] .revq,:root[data-theme="dark"] .lectura{background:rgba(255,255,255,.06)}
+:root[data-theme="dark"] .pend.hot{background:color-mix(in srgb,#E0562F 22%,rgba(255,255,255,.04))}
+:root[data-theme="dark"] .pend .cnt{background:rgba(2,6,23,.35)}
+:root[data-theme="dark"] .pend .cnt b{color:var(--acc)}
+:root[data-theme="dark"] th{color:var(--acc);border-color:rgba(255,255,255,.1)}
+:root[data-theme="dark"] td{border-color:rgba(255,255,255,.07)}
+:root[data-theme="dark"] tbody tr:hover td{background:rgba(255,255,255,.04)}
+/* Ventanas, menús y avisos: vidrio más oscuro para que se lean encima de todo */
+:root[data-theme="dark"] .win,:root[data-theme="dark"] .dd-in,:root[data-theme="dark"] .ayuda{background:rgba(10,16,34,.94);border:1px solid rgba(255,255,255,.12);backdrop-filter:blur(16px);-webkit-backdrop-filter:blur(16px)}
+:root[data-theme="dark"] .dd-in::before{background:rgba(10,16,34,.94);border-color:rgba(255,255,255,.12)}
+:root[data-theme="dark"] .ayuda .ah{background:linear-gradient(135deg,color-mix(in srgb,var(--brand-base) 60%,#0b1222),#0b1222)}
+:root[data-theme="dark"] .toast{background:#F8FAFC;color:#020617}
+:root[data-theme="dark"] .toast[data-tipo="error"]{background:#B3261E;color:#fff}
+:root[data-theme="dark"] select option{background:#0b1222;color:#fff}
+:root[data-theme="dark"] .bnav{background:rgba(2,6,23,.82);border-color:rgba(255,255,255,.1);backdrop-filter:var(--vidrio);-webkit-backdrop-filter:var(--vidrio)}
+:root[data-theme="dark"] .field input,:root[data-theme="dark"] .field select,:root[data-theme="dark"] .field textarea,:root[data-theme="dark"] .sfield,
+:root[data-theme="dark"] .oprow input[type=text],:root[data-theme="dark"] .prow input,:root[data-theme="dark"] .qe textarea,:root[data-theme="dark"] .qe input.tx,:root[data-theme="dark"] .par select,:root[data-theme="dark"] .qe .val{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.14);color:#fff}
+:root[data-theme="dark"] .field input:focus,:root[data-theme="dark"] .field select:focus,:root[data-theme="dark"] .field textarea:focus{border-color:var(--acc-2);background:rgba(255,255,255,.09)}
+:root[data-theme="dark"] .qe .qh{background:rgba(255,255,255,.04);border-color:rgba(255,255,255,.08)}
+:root[data-theme="dark"] .opt{background:rgba(255,255,255,.05);border-color:rgba(255,255,255,.14)}
+:root[data-theme="dark"] .opt[aria-checked="true"]{border-color:var(--acc-2);background:color-mix(in srgb,var(--brand-base) 30%,rgba(255,255,255,.06))}
+/* Botones en píldora: claro el principal, vidrio los demás */
+:root[data-theme="dark"] .btn.pri,:root[data-theme="dark"] .band .btn.pri{background:#F8FAFC;color:#020617;border:1px solid #fff;box-shadow:0 10px 30px -10px color-mix(in srgb,var(--brand-base) 60%,transparent)}
+:root[data-theme="dark"] .btn.pri:hover{background:#fff;box-shadow:0 14px 34px -10px color-mix(in srgb,var(--acc-2) 60%,transparent)}
+:root[data-theme="dark"] .btn.pri::after{background:linear-gradient(110deg,transparent 30%,rgba(2,6,23,.08) 48%,transparent 66%)}
+:root[data-theme="dark"] .btn.sec,:root[data-theme="dark"] .btn.ghost,:root[data-theme="dark"] .band .btn.sec{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:#fff}
+:root[data-theme="dark"] .btn.sec:hover,:root[data-theme="dark"] .btn.ghost:hover{background:rgba(255,255,255,.15);border-color:var(--acc-2)}
+:root[data-theme="dark"] .ibtn{background:rgba(255,255,255,.06);border:1px solid rgba(255,255,255,.1);color:#fff}
+:root[data-theme="dark"] .ibtn:hover{border-color:var(--acc-2)}
+:root[data-theme="dark"] .seg2,:root[data-theme="dark"] .tabs{background:rgba(255,255,255,.06);border-color:rgba(255,255,255,.1)}
+:root[data-theme="dark"] .seg2 button[aria-pressed="true"],:root[data-theme="dark"] .tabs button[aria-pressed="true"]{background:#F8FAFC;color:#020617}
+:root[data-theme="dark"] .linkbtn{color:var(--acc)}
+/* Ingreso: la foto general detrás; el escudo sobre vidrio y el formulario en un panel */
+:root[data-theme="dark"] .loginwrap{background:none}
+:root[data-theme="dark"] .loginwrap .hero.acceso{background:transparent;-webkit-mask:none;mask:none}
+:root[data-theme="dark"] .loginwrap form{background:rgba(255,255,255,.08);border:1px solid rgba(255,255,255,.1);border-radius:2rem;backdrop-filter:var(--vidrio);-webkit-backdrop-filter:var(--vidrio);box-shadow:var(--shadow-lg);padding:36px 30px;align-self:center;margin:24px}
+:root[data-theme="dark"] .loginwrap .ayudaclave{background:rgba(2,6,23,.35);border-color:rgba(255,255,255,.1)}
+:root[data-theme="dark"] .loginwrap form .lbl{color:var(--acc)}
+@media (max-width:760px){:root[data-theme="dark"] .loginwrap form{margin:0 14px 24px;padding:26px 20px}}
+/* El que tiene foto de colegio, la ve también en la vista previa de Ajustes */
+.fotoprev{height:150px;border-radius:22px;background:center/cover no-repeat;position:relative;overflow:hidden;display:grid;place-items:end start;padding:14px}
+.fotoprev::before{content:"";position:absolute;inset:0;background:linear-gradient(135deg,rgba(2,6,23,.85),rgba(15,23,42,.7) 50%,color-mix(in srgb,var(--brand-base) 45%,rgba(0,40,44,.6)))}
+.fotoprev span{position:relative;color:#fff;font:700 13px var(--sans)}
+/* Aviso: el administrador está dentro de un colegio */
+.actuando{position:fixed;left:22px;bottom:22px;z-index:45;display:flex;align-items:center;gap:10px;max-width:min(520px,calc(100vw - 150px));padding:8px 8px 8px 16px;border-radius:999px;
+  background:rgba(2,6,23,.86);color:#fff;border:1px solid color-mix(in srgb,var(--acc-2,#9fecee) 60%,transparent);backdrop-filter:blur(12px);-webkit-backdrop-filter:blur(12px);box-shadow:0 18px 40px -12px rgba(0,0,0,.6);font:600 13.5px var(--sans)}
+.actuando span{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.actuando b{color:#9fecee}
+.actuando button{flex:none;border:0;border-radius:999px;padding:8px 14px;background:#F8FAFC;color:#020617;font:800 13px var(--sans);cursor:pointer}
+@media (max-width:900px){.actuando{left:10px;right:80px;bottom:calc(92px + env(safe-area-inset-bottom,0px));max-width:none}}
+@media (prefers-reduced-motion:reduce){:root[data-theme="dark"] .card.lift:hover,:root[data-theme="dark"] .tile2:hover{transform:none}}
