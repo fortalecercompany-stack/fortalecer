@@ -3,6 +3,7 @@ import { $, $$, esc, ic, AREAS, SHORT, col, soft, aico, chip, toast, errorMsg, m
 import { sb, q, rpc, usuarios, subirArchivo } from './api.js';
 import { reporteAplicacion, listaAplicaciones } from './reportes.js';
 import { avisosHTML, conectarAvisos } from './avisos.js';
+import { editarPersona, borrarPersona } from './personas.js';
 
 let ADMIN = false;
 export async function render(ctx) {
@@ -66,14 +67,35 @@ async function colegios({ main, go, recargar }) {
   const [cols, grupos, perf] = await Promise.all([q(sb.from('colegios').select('*').order('nombre')), q(sb.from('grupos').select('*')), q(sb.from('perfiles').select('colegio_id,rol').in('rol', ['coordinador', 'estudiante']))]);
   const gr = id => grupos.filter(g => g.colegio_id === id).sort((a, b) => a.grado - b.grado || a.nombre.localeCompare(b.nombre));
   const n = (id, rol) => perf.filter(p => p.colegio_id === id && p.rol === rol).length;
-  main.innerHTML = `${head('Administración', 'Colegios', ADMIN ? `<button class="btn pri" type="button" data-nuevo>+ Crear colegio</button>` : '')}
+  main.innerHTML = `${head('Administración', 'Colegios', ADMIN ? `<button class="btn pri" type="button" data-nuevo>+ Crear colegio</button><button class="btn sec" type="button" data-fotoentrada>${ic('i-image', 18)}Foto de la entrada</button>` : '')}
     <div class="grid g4">${kpi('i-school', 'var(--brand)', 'var(--brand-soft)', cols.length, 'colegios')}${kpi('i-sync', 'var(--ok)', 'var(--ok-soft)', cols.filter(c => c.activo).length, 'activos')}${kpi('i-users', 'var(--a3)', 'var(--a3s)', perf.filter(p => p.rol === 'estudiante').length, 'estudiantes')}${kpi('i-teacher', 'var(--a4)', 'var(--a4s)', perf.filter(p => p.rol === 'coordinador').length, 'coordinadores')}</div>
     ${cols.length ? `<div class="grid g3">${cols.map(c => `<div class="card lift"><div class="row between">${escudo(c.escudo_url, c.nombre, 52)}${c.activo ? pill('Activo', 'p-ok') : pill('Inactivo')}</div><div><h3>${esc(c.nombre)}</h3><p class="xs muted">${esc([c.municipio, c.departamento].filter(Boolean).join(', '))}</p></div>
       <div class="row" style="gap:6px">${gr(c.id).map(g => `<span class="pill p-brand">${esc(grupoTxt(g))}</span>`).join('') || pill('Sin grupos')}</div>
-      <div class="row between"><span class="small"><b>${n(c.id, 'estudiante')}</b> estudiantes · <b>${n(c.id, 'coordinador')}</b> coord.</span><button class="btn pri sm" type="button" data-abrir="${c.id}">Abrir</button></div></div>`).join('')}</div>`
+      <div class="row between"><span class="small"><b>${n(c.id, 'estudiante')}</b> estudiantes · <b>${n(c.id, 'coordinador')}</b> coord.</span><span class="row" style="gap:6px">${ADMIN ? `<button class="btn sec sm" type="button" data-entrar="${c.id}" title="Trabajar como su coordinador">Administrar</button>` : ''}<button class="btn pri sm" type="button" data-abrir="${c.id}">Abrir</button></span></div></div>`).join('')}</div>`
       : `<div class="card">${vacio('i-school', 'Todavía no hay colegios', 'Cree el primero con su escudo, grupos y coordinador.', ADMIN ? `<button class="btn pri" type="button" data-nuevo>+ Crear colegio</button>` : '')}</div>`}
     <p class="xs muted">Un colegio inactivo pierde el acceso, pero su información se conserva.</p>${corp}`;
-  main.onclick = e => { const b = e.target.closest('button'); if (!b) return; if ('nuevo' in b.dataset) asistenteColegio(null, [], recargar); if (b.dataset.abrir) go('colegios/' + b.dataset.abrir); };
+  main.onclick = e => { const b = e.target.closest('button'); if (!b) return; if ('nuevo' in b.dataset) asistenteColegio(null, [], recargar); if (b.dataset.abrir) go('colegios/' + b.dataset.abrir); if (b.dataset.entrar) entrarColegio(cols.find(c => c.id === b.dataset.entrar)); if ('fotoentrada' in b.dataset) fotoEntrada(); };
+}
+// El administrador trabaja dentro de un colegio como si fuera su coordinador
+export async function entrarColegio(c) {
+  try { await rpc('admin_entrar_colegio', { p_colegio: c.id }); toast(`Entrando a ${c.nombre}…`); history.replaceState(null, '', location.pathname + '#/inicio'); location.reload(); }
+  catch (er) { toast(errorMsg(er), 'error'); }
+}
+// Foto de fondo de la pantalla de ingreso (para todos)
+async function fotoEntrada() {
+  const actual = (await q(sb.from('ajustes_sistema').select('valor').eq('clave', 'fondo_ingreso')))[0]?.valor || '';
+  const w = modal({ icon: 'i-image', titulo: 'Foto de la pantalla de ingreso', sub: 'Se ve detrás del escudo, para todos los colegios', form: true,
+    cuerpo: `${actual ? `<img src="${esc(actual)}" alt="Foto actual" style="width:100%;max-height:220px;object-fit:cover;border-radius:18px">` : '<p class="small muted">Ahora no hay foto: se ve el fondo de color.</p>'}
+      <div class="field"><label for="fe">Foto nueva (JPG o PNG, horizontal, máximo 4 MB)</label><input id="fe" type="file" accept="image/*"></div>
+      <p class="xs muted">Use una foto propia o con permiso de su autor. Se oscurece un poco para que el texto se lea bien.</p>`,
+    pie: `${actual ? '<button class="btn ghost" type="button" id="fequitar" style="color:var(--bad);margin-right:auto">Quitar foto</button>' : ''}<button class="btn sec" type="button" data-cerrar>Cancelar</button><button class="btn pri" type="submit">Guardar</button>` });
+  const guardar = async valor => { await q(sb.from('ajustes_sistema').upsert({ clave: 'fondo_ingreso', valor, actualizado_en: new Date().toISOString() })); cerrarModal(); toast(valor ? 'Foto guardada.' : 'Foto quitada.'); };
+  $('#fequitar')?.addEventListener('click', () => guardar(null).catch(er => toast(errorMsg(er), 'error')));
+  w.querySelector('form').onsubmit = async ev => {
+    ev.preventDefault(); const f = $('#fe').files[0];
+    if (!f) return toast('Elija una foto.', 'error'); if (f.size > 4 * 1024 * 1024) return toast('La foto pesa más de 4 MB.', 'error');
+    try { toast('Subiendo foto…'); await guardar(await subirArchivo('escudos', f, 'entrada/fondo')); } catch (er) { toast(errorMsg(er), 'error'); }
+  };
 }
 
 function asistenteColegio(c, gruposActuales, alTerminar) {
@@ -143,17 +165,22 @@ async function colegioDetalle({ S, main, params, go, recargar }) {
   const [c, grupos, perf, apls] = await Promise.all([q(sb.from('colegios').select('*').eq('id', id).single()), q(sb.from('grupos').select('*').eq('colegio_id', id)), q(sb.from('perfiles').select('*').eq('colegio_id', id)), q(sb.from('aplicaciones').select('*').eq('colegio_id', id).order('inicio', { ascending: false }))]);
   grupos.sort((a, b) => a.grado - b.grado || a.nombre.localeCompare(b.nombre));
   const coords = perf.filter(p => p.rol === 'coordinador'), est = perf.filter(p => p.rol === 'estudiante'), docs = perf.filter(p => p.rol === 'docente');
-  main.innerHTML = `${head(`${c.activo ? 'Activo' : 'Inactivo'} · ${esc([c.municipio, c.departamento].filter(Boolean).join(', '))}`, esc(c.nombre), ADMIN ? `<button class="btn sec" type="button" data-editar>${ic('i-edit', 16)}Editar</button><button class="btn sec" type="button" data-activo>${c.activo ? 'Desactivar' : 'Activar'}</button>` : '', { volver: volverBtn('colegios', 'Colegios'), sub: `${esc(c.sede || '')}${c.dane ? ' · DANE ' + esc(c.dane) : ''} · escala de ${notaTxt(c.escala_min, c.decimales)} a ${notaTxt(c.escala_max, c.decimales)} <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${esc(c.color || '#2B3A8C')};vertical-align:-2px;border:2px solid #fff"></span>` })}
+  main.innerHTML = `${head(`${c.activo ? 'Activo' : 'Inactivo'} · ${esc([c.municipio, c.departamento].filter(Boolean).join(', '))}`, esc(c.nombre), ADMIN ? `<button class="btn pri" type="button" data-entrar>${ic('i-gear', 16)}Administrar este colegio</button><button class="btn sec" type="button" data-editar>${ic('i-edit', 16)}Editar</button><button class="btn sec" type="button" data-activo>${c.activo ? 'Desactivar' : 'Activar'}</button><button class="btn sec" type="button" data-borrarcol>${ic('i-trash', 16)}Borrar</button>` : '', { volver: volverBtn('colegios', 'Colegios'), sub: `${esc(c.sede || '')}${c.dane ? ' · DANE ' + esc(c.dane) : ''} · escala de ${notaTxt(c.escala_min, c.decimales)} a ${notaTxt(c.escala_max, c.decimales)} <span style="display:inline-block;width:14px;height:14px;border-radius:50%;background:${esc(c.color || '#2B3A8C')};vertical-align:-2px;border:2px solid #fff"></span>` })}
     <div class="grid g4">${kpi('i-users', 'var(--brand)', 'var(--brand-soft)', est.length, 'estudiantes')}${kpi('i-school', 'var(--a3)', 'var(--a3s)', grupos.length, 'grupos')}${kpi('i-teacher', 'var(--a4)', 'var(--a4s)', docs.length, 'docentes')}${kpi('i-exam', 'var(--a2)', 'var(--a2s)', apls.length, 'simulacros programados')}</div>
     <div class="bento">
       <div class="card w6"><div><span class="lbl">Grados y grupos</span><h2>${grupos.length} grupos</h2></div><div class="tw"><table><thead><tr><th>Grupo</th><th class="r">Estudiantes</th><th class="r">Sin autorización</th></tr></thead><tbody>${grupos.map(g => `<tr><td><b>${esc(grupoTxt(g))}</b></td><td class="r num">${est.filter(e => e.grupo_id === g.id).length}</td><td class="r num">${est.filter(e => e.grupo_id === g.id && !e.autorizacion_acudiente).length}</td></tr>`).join('') || `<tr><td colspan="3" class="muted">Sin grupos</td></tr>`}</tbody></table></div></div>
       <div class="card w6"><div class="row between"><div><span class="lbl">Coordinación</span><h2>${coords.length} coordinador(es)</h2></div>${ADMIN ? `<button class="btn sec sm" type="button" data-coord>+ Agregar</button>` : ''}</div>
-        ${coords.map(p => `<div class="row" style="gap:10px;flex-wrap:nowrap"><span class="av" style="width:36px;height:36px;font-size:12px;border-radius:11px">${esc(iniciales(p.nombres + ' ' + p.apellidos))}</span><div style="flex:1"><b class="small">${esc(p.nombres)} ${esc(p.apellidos)}</b><div class="xs muted">${esc(p.email)}${p.activo ? '' : ' · inactivo'}</div></div><button class="ibtn" type="button" data-reset="${p.id}" title="Restablecer contraseña">${ic('i-key', 16)}</button></div>`).join('') || '<p class="muted small">Sin coordinador.</p>'}</div>
+        ${coords.map(p => `<div class="row" style="gap:10px;flex-wrap:nowrap"><span class="av" style="width:36px;height:36px;font-size:12px;border-radius:11px">${esc(iniciales(p.nombres + ' ' + p.apellidos))}</span><div style="flex:1"><b class="small">${esc(p.nombres)} ${esc(p.apellidos)}</b><div class="xs muted">${esc(p.email)}${p.activo ? '' : ' · inactivo'}</div></div>${ADMIN ? `<button class="ibtn" type="button" data-pedit="${p.id}" title="Editar">${ic('i-edit', 16)}</button>` : ''}<button class="ibtn" type="button" data-reset="${p.id}" title="Restablecer contraseña">${ic('i-key', 16)}</button>${ADMIN ? `<button class="ibtn ${p.activo ? 'danger' : ''}" type="button" data-pact="${p.id}" title="${p.activo ? 'Desactivar' : 'Activar'}">${ic(p.activo ? 'i-exit' : 'i-sync', 16)}</button><button class="ibtn danger" type="button" data-pdel="${p.id}" title="Borrar">${ic('i-trash', 16)}</button>` : ''}</div>`).join('') || '<p class="muted small">Sin coordinador.</p>'}</div>
       <div class="card w12"><div><span class="lbl">Simulacros del colegio</span><h2>Programados y aplicados</h2></div>${listaAplicaciones(apls, grupos, { avance: true })}</div>
     </div>${corp}`;
   main.onclick = async e => {
     const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
     if ('editar' in d) asistenteColegio(c, grupos, recargar);
+    if ('entrar' in d) entrarColegio(c);
+    if ('borrarcol' in d) borrarColegio(c, () => go('colegios'));
+    if (d.pedit) { const cols = await q(sb.from('colegios').select('id,nombre').order('nombre')); editarPersona(coords.find(x => x.id === d.pedit), { esAdmin: true, colegios: cols, alCambiar: recargar }); }
+    if (d.pdel) borrarPersona(coords.find(x => x.id === d.pdel), recargar);
+    if (d.pact) { const p = coords.find(x => x.id === d.pact); if (await confirmar({ titulo: p.activo ? 'Desactivar coordinador' : 'Activar coordinador', texto: p.activo ? 'No podrá ingresar. Su información se conserva.' : 'Podrá ingresar de nuevo.', si: p.activo ? 'Desactivar' : 'Activar', peligro: p.activo })) { try { await usuarios({ accion: p.activo ? 'desactivar' : 'activar', id: p.id }); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } } }
     if (d.rep) go('reportes/' + d.rep);
     if ('activo' in d) { if (await confirmar({ titulo: c.activo ? 'Desactivar colegio' : 'Activar colegio', texto: c.activo ? 'Todos sus usuarios pierden el acceso. La información se conserva.' : 'Sus usuarios podrán ingresar de nuevo.', si: c.activo ? 'Desactivar' : 'Activar', peligro: c.activo })) { try { await q(sb.from('colegios').update({ activo: !c.activo }).eq('id', c.id)); toast('Listo.'); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } } }
     if (d.reset) { const p = coords.find(x => x.id === d.reset); if (await confirmar({ titulo: 'Restablecer contraseña', texto: `La contraseña de <b>${esc(p.nombres)}</b> volverá a ser su número de documento.`, si: 'Restablecer' })) { try { await usuarios({ accion: 'restablecer', id: p.id }); toast('Contraseña restablecida.'); } catch (er) { toast(errorMsg(er), 'error'); } } }
@@ -161,6 +188,22 @@ async function colegioDetalle({ S, main, params, go, recargar }) {
       const w = modal({ icon: 'i-teacher', titulo: 'Agregar coordinador', sub: esc(c.nombre), form: true, cuerpo: `${field('cn', 'Nombres', '', 'required')}${field('ca', 'Apellidos', '', 'required')}${field('ce', 'Correo', '', 'type="email" required', 'Será su usuario.')}${field('cd', 'Número de documento', '', 'inputmode="numeric" required', 'Será su contraseña inicial.')}`, pie: `<button class="btn sec" type="button" data-cerrar>Cancelar</button><button class="btn pri" type="submit">Crear</button>` });
       w.querySelector('form').onsubmit = async ev => { ev.preventDefault(); try { const r = await usuarios({ accion: 'crear', persona: { rol: 'coordinador', nombres: $('#cn').value.trim(), apellidos: $('#ca').value.trim(), email: $('#ce').value.trim(), documento: $('#cd').value.replace(/\D/g, ''), colegio_id: c.id } }); cerrarModal(); credenciales([r], 'Coordinador creado'); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } };
     }
+  };
+}
+
+// Borrar un colegio completo, escribiendo su nombre para confirmar
+async function borrarColegio(c, alTerminar) {
+  const R = await rpc('resumen_colegio', { p_colegio: c.id });
+  const w = modal({ icon: 'i-trash', tono: 'bad', titulo: `¿Borrar ${esc(c.nombre)}?`, form: true, ancho: true,
+    cuerpo: `<div class="alert a-warn">${ic('i-warn')}<div><b>Esto no se puede deshacer</b>Se borran para siempre ${R.usuarios} cuentas (${R.estudiantes} estudiantes), ${R.grupos} grupos, ${R.examenes} exámenes de docentes y ${R.simulacros} simulacros programados, con todas sus notas y resultados.</div></div>
+      <p class="small">Si solo quiere que nadie entre, use <b>Desactivar</b>: la información se conserva.</p>
+      ${field('bcn', `Para confirmar, escriba el nombre del colegio: ${esc(c.nombre)}`, '', 'autocomplete="off"')}`,
+    pie: `<button class="btn sec" type="button" data-cerrar>Cancelar</button><button class="btn pri" type="submit" style="background:var(--bad)">Borrar el colegio</button>` });
+  w.querySelector('form').onsubmit = async ev => {
+    ev.preventDefault();
+    if (normal($('#bcn').value.trim()) !== normal(c.nombre.trim())) return toast('El nombre escrito no coincide.', 'error');
+    try { const r = await usuarios({ accion: 'borrar_colegio', colegio_id: c.id, confirmacion: c.nombre }); cerrarModal(); toast(`Colegio borrado con ${r.borrados} cuentas.`); alTerminar(); }
+    catch (er) { toast(errorMsg(er), 'error'); }
   };
 }
 
@@ -452,19 +495,21 @@ async function usuariosPantalla({ S, main, recargar }) {
   const pintar = () => {
     const L = perf.filter(p => p.rol === tab && (!buscar || normal(`${p.nombres} ${p.apellidos} ${p.documento} ${p.email}`).includes(normal(buscar)))).slice(0, 300);
     $('#utb').innerHTML = L.length ? L.map(p => `<tr><td><div class="row" style="gap:10px;flex-wrap:nowrap"><span class="av" style="width:32px;height:32px;font-size:11px;border-radius:10px">${esc(iniciales(p.nombres + ' ' + p.apellidos))}</span><b class="small">${esc(p.nombres)} ${esc(p.apellidos)}</b></div></td><td class="small">${esc(tab === 'estudiante' ? p.documento : p.email)}</td><td class="small">${esc(cn(p.colegio_id))}</td><td>${p.activo ? (p.debe_cambiar_clave ? pill('No ha ingresado', 'p-warn') : pill('Activo', 'p-ok')) : pill('Inactivo')}</td>
-      <td class="r">${p.id !== S.perfil.id && p.rol !== 'admin' ? `<div class="row" style="justify-content:flex-end;gap:4px;flex-wrap:nowrap"><button class="ibtn" type="button" data-reset="${p.id}" title="Restablecer contraseña">${ic('i-key', 16)}</button>${ADMIN ? `<button class="ibtn ${p.activo ? 'danger' : ''}" type="button" data-activo="${p.id}" title="${p.activo ? 'Desactivar' : 'Activar'}">${ic(p.activo ? 'i-exit' : 'i-sync', 16)}</button>` : ''}</div>` : ''}</td></tr>`).join('') : `<tr><td colspan="5">${vacio('i-users', 'Sin usuarios en esta lista')}</td></tr>`;
+      <td class="r">${p.id !== S.perfil.id && p.rol !== 'admin' ? `<div class="row" style="justify-content:flex-end;gap:4px;flex-wrap:nowrap">${ADMIN ? `<button class="ibtn" type="button" data-pedit="${p.id}" title="Editar, cambiar cargo o colegio">${ic('i-edit', 16)}</button>` : ''}<button class="ibtn" type="button" data-reset="${p.id}" title="Restablecer contraseña">${ic('i-key', 16)}</button>${ADMIN ? `<button class="ibtn ${p.activo ? 'danger' : ''}" type="button" data-activo="${p.id}" title="${p.activo ? 'Desactivar' : 'Activar'}">${ic(p.activo ? 'i-exit' : 'i-sync', 16)}</button><button class="ibtn danger" type="button" data-pdel="${p.id}" title="Borrar">${ic('i-trash', 16)}</button>` : ''}</div>` : p.id === S.perfil.id ? `<button class="ibtn" type="button" data-pedit="${p.id}" title="Editar mis datos">${ic('i-edit', 16)}</button>` : ''}</td></tr>`).join('') : `<tr><td colspan="5">${vacio('i-users', 'Sin usuarios en esta lista')}</td></tr>`;
     $$('[data-tab]', main).forEach(b => b.setAttribute('aria-pressed', b.dataset.tab === tab));
   };
   main.innerHTML = `${head('Todos los colegios', 'Usuarios', ADMIN ? `<button class="btn pri" type="button" data-soporte>+ Persona de soporte</button>` : '')}
     <div class="grid g4">${kpi('i-teacher', 'var(--brand)', 'var(--brand-soft)', perf.filter(p => p.rol === 'coordinador').length, 'coordinadores')}${kpi('i-users', 'var(--a1)', 'var(--a1s)', perf.filter(p => p.rol === 'docente').length, 'docentes')}${kpi('i-user', 'var(--a3)', 'var(--a3s)', perf.filter(p => p.rol === 'estudiante').length, 'estudiantes')}${kpi('i-support', 'var(--a4)', 'var(--a4s)', perf.filter(p => p.rol === 'soporte').length, 'soporte')}</div>
     <div class="card"><div class="row between"><div class="tabs" role="group">${TABS.map(t => `<button type="button" data-tab="${t[0]}">${t[1]}</button>`).join('')}</div><div class="sfield" style="max-width:320px">${ic('i-search', 18)}<input id="ub" placeholder="Buscar por nombre, correo o documento"></div></div>
       <div class="tw"><table><thead><tr><th>Nombre</th><th>Usuario</th><th>Colegio</th><th>Estado</th><th class="r">Acciones</th></tr></thead><tbody id="utb"></tbody></table></div>
-      <p class="xs muted">Los coordinadores se crean desde la ficha de cada colegio. Los docentes y estudiantes los registra la coordinación de cada colegio.</p></div>${corp}`;
+      <p class="xs muted">El lápiz cambia los datos, el cargo o el colegio de cualquier persona. Los coordinadores se crean desde la ficha de cada colegio; los docentes y estudiantes, con «Administrar» en cada colegio.</p></div>${corp}`;
   pintar();
   main.oninput = e => { if (e.target.id === 'ub') { buscar = e.target.value; pintar(); } };
   main.onclick = async e => {
     const b = e.target.closest('button'); if (!b) return; const d = b.dataset;
     if (d.tab) { tab = d.tab; main.dataset.tab = tab; pintar(); }
+    if (d.pedit) editarPersona(perf.find(x => x.id === d.pedit), { esAdmin: true, colegios: cols, alCambiar: recargar });
+    if (d.pdel) borrarPersona(perf.find(x => x.id === d.pdel), recargar);
     if (d.reset) { const p = perf.find(x => x.id === d.reset); if (await confirmar({ titulo: 'Restablecer contraseña', texto: `La contraseña de <b>${esc(p.nombres)} ${esc(p.apellidos)}</b> volverá a ser su número de documento.`, si: 'Restablecer' })) { try { await usuarios({ accion: 'restablecer', id: p.id }); toast('Contraseña restablecida.'); } catch (er) { toast(errorMsg(er), 'error'); } } }
     if (d.activo) { const p = perf.find(x => x.id === d.activo); if (await confirmar({ titulo: p.activo ? 'Desactivar usuario' : 'Activar usuario', texto: p.activo ? 'No podrá ingresar. Su información se conserva.' : 'Podrá ingresar de nuevo.', si: p.activo ? 'Desactivar' : 'Activar', peligro: p.activo })) { try { await usuarios({ accion: p.activo ? 'desactivar' : 'activar', id: p.id }); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } } }
     if ('soporte' in d) {

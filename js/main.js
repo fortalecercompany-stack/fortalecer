@@ -1,5 +1,5 @@
 // FORTALECER · arranque, ingreso y navegación
-import { $, $$, esc, ic, toast, errorMsg, modal, cerrarModal, corp, escudo, iniciales, setCortes, field, aplicarColor } from './lib.js';
+import { $, $$, esc, ic, toast, errorMsg, modal, cerrarModal, corp, escudo, iniciales, setCortes, field, aplicarColor, aplicarFondo } from './lib.js';
 import { sb, configurado, rpc, correoIngreso, borrarSesionLocal } from './api.js';
 
 export const S = { sesion: null, perfil: null, colegio: null, grupo: null, periodo: null, recuperando: false };
@@ -34,7 +34,7 @@ export const go = ruta => { if (location.hash !== '#/' + ruta) location.hash = '
 const main = () => $('#main');
 
 // ---------- Tema ----------
-try { const t = localStorage.getItem('f-tema'); if (t) document.documentElement.dataset.theme = t; } catch { }
+try { document.documentElement.dataset.theme = localStorage.getItem('f-tema') || 'dark'; } catch { document.documentElement.dataset.theme = 'dark'; }
 function cambiarTema() {
   const cur = document.documentElement.dataset.theme || (matchMedia('(prefers-color-scheme: dark)').matches ? 'dark' : 'light');
   const nuevo = cur === 'dark' ? 'light' : 'dark';
@@ -62,9 +62,14 @@ function marco() {
   }).join('');
   $('#top').innerHTML = `<div class="in">${marca}<nav class="tnav" aria-label="Secciones">${tabs}<span class="tind" aria-hidden="true"></span></nav><div class="right">
     <button class="bell" type="button" data-tema aria-label="Cambiar tema">${ic(oscuro ? 'i-sun' : 'i-moon', 19)}</button>
-    <span class="who"><b>${esc(p.nombres)} ${esc(p.apellidos)}</b><small>${ROL_TXT[p.rol]}</small></span>
+    <span class="who"><b>${esc(p.nombres)} ${esc(p.apellidos)}</b><small>${p.actuando ? "Administrador" : ROL_TXT[p.rol]}</small></span>
     <button class="av" type="button" data-menu aria-label="Mi cuenta" style="border:0;cursor:pointer">${esc(iniciales(p.nombres + ' ' + p.apellidos))}</button></div></div>`;
   $('#bnav').hidden = false;
+  let av = $('#actuando');
+  if (p.actuando && S.colegio) {
+    if (!av) { av = document.createElement('div'); av.id = 'actuando'; av.className = 'actuando'; document.body.appendChild(av); }
+    av.innerHTML = `<span>Administrando <b>${esc(S.colegio.nombre)}</b> como coordinador</span><button type="button" data-salir-colegio>Volver a administrador</button>`;
+  } else av?.remove();
   $('#bnav').innerHTML = nav.slice(0, 5).map(([k, l, i, h]) => `<button type="button" ${h ? `data-hoja="${k}"` : `data-ir="${k}"`} ${(h ? h.some(x => x[0] === ruta) : ruta === k) ? 'aria-current="page"' : ''}>${ic(i, 20)}<span>${l}</span></button>`).join('');
   pintarAyuda(true);
 }
@@ -118,6 +123,7 @@ document.addEventListener('click', e => {
   if ('tema' in t.dataset) cambiarTema();
   if ('menu' in t.dataset) menuCuenta();
   if ('salir' in t.dataset) salir();
+  if ('salirColegio' in t.dataset) { rpc('admin_salir_colegio').then(() => { history.replaceState(null, '', location.pathname + '#/colegios'); location.reload(); }).catch(er => toast(errorMsg(er), 'error')); }
   if ('cambiarClave' in t.dataset) { cerrarModal(); pantallaClave(false); }
 });
 document.addEventListener('click', e => { if (!e.target.closest('.nv')) $$('.nv.open').forEach(x => x.classList.remove('open')); });
@@ -156,11 +162,12 @@ setInterval(() => {
 // ---------- Pantallas de ingreso ----------
 function pantallaIngreso() {
   marco(); document.documentElement.classList.add('en-login');
+  rpc('fondo_ingreso').then(aplicarFondo).catch(() => { });
   main().innerHTML = `<div class="loginwrap">
     <div class="hero acceso" aria-hidden="true">
       <div class="llave">
         <svg viewBox="0 0 220 240" class="escudo-acceso">
-          <defs><linearGradient id="gEsc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" stop-color="#4556B8"/><stop offset="1" stop-color="#1C2766"/></linearGradient></defs>
+          <defs><linearGradient id="gEsc" x1="0" y1="0" x2="1" y2="1"><stop offset="0" style="stop-color:var(--brand-hi,#4556B8)"/><stop offset="1" style="stop-color:var(--brand-2,#1C2766)"/></linearGradient></defs>
           <circle cx="110" cy="120" r="104" fill="none" stroke="rgba(255,255,255,.16)" stroke-width="2" stroke-dasharray="4 10"/>
           <circle class="g2" cx="110" cy="120" r="84" fill="none" stroke="rgba(224,86,47,.6)" stroke-width="2" stroke-dasharray="40 14"/>
           <g class="g3"><circle cx="214" cy="120" r="5" fill="#FF9A7A"/></g>
@@ -292,6 +299,7 @@ export async function arrancar() {
   if (!ses || !ses.perfil) return pantallaMensaje('i-warn', 'Su usuario no tiene perfil', 'La cuenta existe, pero no está registrada en FORTALECER. Si es el administrador, ejecute el archivo <b>03_primer_administrador.sql</b> (vea la guía de instalación).');
   S.perfil = ses.perfil; S.colegio = ses.colegio; S.grupo = ses.grupo; S.periodo = ses.periodo;
   aplicarColor(S.colegio?.color);
+  aplicarFondo(S.colegio?.fondo_url || ses.fondo_ingreso);
   if (!S.perfil.activo) return pantallaMensaje('i-exit', 'Su cuenta está desactivada', 'Comuníquese con la coordinación de su colegio.');
   if (S.colegio && !S.colegio.activo) return pantallaMensaje('i-school', 'El acceso de su colegio está suspendido', 'La información se conserva. Comuníquese con el administrador de FORTALECER.');
   try { const aj = await sb.from('ajustes').select('valor').eq('clave', 'cortes').maybeSingle(); if (aj.data) setCortes(aj.data.valor); } catch { }

@@ -85,9 +85,14 @@ export const notaCls = (n, esc) => n == null ? 'mute' : Number(n) >= Number(esc?
 export const notaHTML = (n, esc) => `<span class="nota ${notaCls(n, esc)}">${notaTxt(n, esc?.decimales ?? 1)}</span>`;
 // El color de la franja y los botones es el del colegio
 export function aplicarColor(hex) {
-  const c = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex : '#2B3A8C';
+  const c = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex : '#0F6F74';
   document.documentElement.style.setProperty('--brand-base', c);
   document.querySelector('meta[name=theme-color]')?.setAttribute('content', c);
+}
+// Foto de fondo (la del colegio o la de la entrada)
+export function aplicarFondo(url) {
+  if (url) document.documentElement.style.setProperty('--fondo', `url("${String(url).replace(/["\\]/g, '')}")`);
+  else document.documentElement.style.removeProperty('--fondo');
 }
 export const notaRoja = (n, d = 1, sub = '', size = 170) => `<span class="nota-roja" style="width:${size}px;height:${Math.round(size * .86)}px;--nz:${Math.round(size * .32)}px" role="img" aria-label="Nota ${notaTxt(n, d)} ${esc(sub)}"><svg viewBox="0 0 100 86" aria-hidden="true"><path d="M58 6C84 6 98 24 95 44c-3 22-26 37-50 36C20 79 3 64 5 42 7 20 28 6 52 8c10 1 18 4 24 8"/></svg><span><b>${notaTxt(n, d)}</b>${sub ? `<small>${esc(sub)}</small>` : ''}</span></span>`;
 export const confeti = (n = 26) => `<div class="confeti" aria-hidden="true">${Array.from({ length: n }, (_, i) => `<i style="left:${(i * 37) % 100}%;top:${(i * 13) % 35}%;background:${['#FF9A7A', '#FFD166', '#9BE7BF', '#FFFFFF', '#8C9BF0'][i % 5]};animation-delay:${(i % 7) * .09}s"></i>`).join('')}</div>`;

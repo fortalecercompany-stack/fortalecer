@@ -1,6 +1,8 @@
 // FORTALECER · pantallas del coordinador
 import { $, $$, esc, ic, AREAS, SHORT, col, soft, aico, chip, toast, errorMsg, modal, cerrarModal, confirmar, head, kpi, cargando, vacio, corp, field, selectField, fecha, fechaHora, hora, pill, iniciales, leerExcel, descargarExcel, normal, GRADOS, notaTxt, notaHTML, escudo, imprimir, volverBtn, aplicarColor } from './lib.js';
 import { resultadosEx, notasGrupoHTML } from './docente.js';
+import { editarPersona, borrarPersona } from './personas.js';
+import { subirArchivo } from './api.js';
 import { sb, q, rpc, usuarios } from './api.js';
 import { reporteAplicacion, listaAplicaciones, evolucionHTML } from './reportes.js';
 import { avisosHTML, conectarAvisos } from './avisos.js';
@@ -135,7 +137,7 @@ async function estudiantes({ S, main, recargar }) {
     const L = est.filter(e => (!filtro || e.grupo_id === filtro) && (!buscar || normal(e.nombres + ' ' + e.apellidos + ' ' + e.documento).includes(normal(buscar))));
     $('#tbody').innerHTML = L.length ? L.map(e => `<tr><td><div class="row" style="gap:10px;flex-wrap:nowrap"><span class="av" style="width:34px;height:34px;font-size:11px;border-radius:10px">${esc(iniciales(e.nombres + ' ' + e.apellidos))}</span><div><b class="small">${esc(e.apellidos)} ${esc(e.nombres)}</b>${e.activo ? '' : ' <span class="pill p-mute">Inactivo</span>'}</div></div></td><td class="num">${esc(e.documento)}</td><td>${esc(grupoTxt(g(e.grupo_id)))}</td>
       <td><label class="toggle" title="Autorización del acudiente"><input type="checkbox" data-aut="${e.id}" ${e.autorizacion_acudiente ? 'checked' : ''} aria-label="Autorización de ${esc(e.nombres)}"><span></span></label></td>
-      <td class="r"><div class="row" style="justify-content:flex-end;gap:4px;flex-wrap:nowrap"><button class="ibtn" type="button" data-editar="${e.id}" title="Editar">${ic('i-edit', 16)}</button><button class="ibtn" type="button" data-reset="${e.id}" title="Restablecer contraseña">${ic('i-key', 16)}</button><button class="ibtn ${e.activo ? 'danger' : ''}" type="button" data-activo="${e.id}" title="${e.activo ? 'Desactivar' : 'Activar'}">${ic(e.activo ? 'i-exit' : 'i-sync', 16)}</button></div></td></tr>`).join('')
+      <td class="r"><div class="row" style="justify-content:flex-end;gap:4px;flex-wrap:nowrap"><button class="ibtn" type="button" data-editar="${e.id}" title="Editar">${ic('i-edit', 16)}</button><button class="ibtn" type="button" data-reset="${e.id}" title="Restablecer contraseña">${ic('i-key', 16)}</button><button class="ibtn ${e.activo ? 'danger' : ''}" type="button" data-activo="${e.id}" title="${e.activo ? 'Desactivar' : 'Activar'}">${ic(e.activo ? 'i-exit' : 'i-sync', 16)}</button><button class="ibtn danger" type="button" data-pdel="${e.id}" title="Borrar">${ic('i-trash', 16)}</button></div></td></tr>`).join('')
       : `<tr><td colspan="5">${vacio('i-users', est.length ? 'No hay estudiantes con ese filtro' : 'Todavía no hay estudiantes', est.length ? '' : 'Agréguelos uno por uno o cárguelos con un Excel.')}</td></tr>`;
     $('#nest').textContent = L.length;
   };
@@ -171,7 +173,8 @@ async function estudiantes({ S, main, recargar }) {
     }
     if (d.activo) { const x = est.find(y => y.id === d.activo); const acc = x.activo ? 'desactivar' : 'activar';
       if (await confirmar({ titulo: x.activo ? 'Desactivar estudiante' : 'Activar estudiante', texto: x.activo ? `<b>${esc(x.nombres)} ${esc(x.apellidos)}</b> no podrá ingresar. Su información y resultados se conservan. Úselo, por ejemplo, con egresados.` : `<b>${esc(x.nombres)}</b> podrá ingresar de nuevo.`, si: x.activo ? 'Desactivar' : 'Activar', peligro: x.activo })) { try { await usuarios({ accion: acc, id: x.id }); toast(x.activo ? 'Estudiante desactivado.' : 'Estudiante activado.'); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } } }
-    if (d.editar) editarEstudiante(est.find(y => y.id === d.editar), grupos, recargar);
+    if (d.editar) editarPersona(est.find(y => y.id === d.editar), { alCambiar: recargar });
+    if (d.pdel) borrarPersona(est.find(y => y.id === d.pdel), recargar);
   };
 }
 function nuevoEstudiante(S, grupos, grupoSel, recargar) {
@@ -260,7 +263,7 @@ async function docentes({ S, main, recargar }) {
   main.innerHTML = `${head(esc(S.colegio.nombre), 'Docentes', `<button class="btn pri" type="button" data-nuevo>+ Agregar docente</button>`)}
     <div class="card">${docs.length ? `<div class="tw"><table><thead><tr><th>Docente</th><th>Área ICFES</th><th>Materias y grupos</th><th>Estado</th><th class="r">Acciones</th></tr></thead><tbody>${docs.map(d => `<tr><td><div class="row" style="gap:10px;flex-wrap:nowrap"><span class="av" style="width:34px;height:34px;font-size:11px;border-radius:10px;background:${d.area != null ? col(d.area) : 'var(--brand)'}">${esc(iniciales(d.nombres + ' ' + d.apellidos))}</span><div><b class="small">${esc(d.nombres)} ${esc(d.apellidos)}</b><div class="xs muted">${esc(d.email)}</div></div></div></td>
       <td>${d.area != null ? chip(d.area) : ''}${d.componente ? `<div class="xs muted">${esc(d.componente)}</div>` : ''}</td><td class="small">${(asig.filter(a => a.docente_id === d.id).map(a => `${esc(mN[a.materia_id] || '')} ${esc(grupoTxt(grupos.find(g => g.id === a.grupo_id)))}`).join(', ') || '<span class="muted">Sin materias</span>')}</td><td>${d.activo ? (d.debe_cambiar_clave ? pill('No ha ingresado', 'p-warn') : pill('Activo', 'p-ok')) : pill('Inactivo')}</td>
-      <td class="r"><div class="row" style="justify-content:flex-end;gap:4px;flex-wrap:nowrap"><button class="ibtn" type="button" data-mat="${d.id}" title="Materias y grupos">${ic('i-school', 16)}</button><button class="ibtn" type="button" data-reset="${d.id}" title="Restablecer contraseña">${ic('i-key', 16)}</button><button class="ibtn ${d.activo ? 'danger' : ''}" type="button" data-activo="${d.id}" title="${d.activo ? 'Desactivar' : 'Activar'}">${ic(d.activo ? 'i-exit' : 'i-sync', 16)}</button></div></td></tr>`).join('')}</tbody></table></div>`
+      <td class="r"><div class="row" style="justify-content:flex-end;gap:4px;flex-wrap:nowrap"><button class="ibtn" type="button" data-mat="${d.id}" title="Materias y grupos">${ic('i-school', 16)}</button><button class="ibtn" type="button" data-pedit="${d.id}" title="Editar">${ic('i-edit', 16)}</button><button class="ibtn" type="button" data-reset="${d.id}" title="Restablecer contraseña">${ic('i-key', 16)}</button><button class="ibtn ${d.activo ? 'danger' : ''}" type="button" data-activo="${d.id}" title="${d.activo ? 'Desactivar' : 'Activar'}">${ic(d.activo ? 'i-exit' : 'i-sync', 16)}</button><button class="ibtn danger" type="button" data-pdel="${d.id}" title="Borrar">${ic('i-trash', 16)}</button></div></td></tr>`).join('')}</tbody></table></div>`
     : vacio('i-teacher', 'Todavía no hay docentes', 'Agregue a cada docente con su correo. Luego asígnele sus materias en cada grupo.')}
     <p class="xs muted">Toque el botón de materias para decir qué enseña cada docente en cada grupo. Así puede crear exámenes y ver las notas de esos grupos. Si olvida la contraseña, la recupera con su correo.</p></div>${corp}`;
   const checks = sel => `<fieldset style="border:0;padding:0;margin:0;display:grid;gap:8px"><legend style="font:700 13.5px var(--sans);margin-bottom:6px">Grupos a su cargo</legend><div class="row small">${grupos.map(g => `<label class="switch"><input type="checkbox" name="gr" value="${g.id}" ${sel.includes(g.id) ? 'checked' : ''}> ${esc(grupoTxt(g))}</label>`).join('') || '<span class="muted">Primero cree los grupos en Estudiantes.</span>'}</div></fieldset>`;
@@ -285,6 +288,8 @@ async function docentes({ S, main, recargar }) {
       w.querySelector('form').onsubmit = async ev => { ev.preventDefault(); try { await q(sb.from('docente_grupos').delete().eq('docente_id', doc.id)); const sel = $$('input[name=gr]:checked', w).map(x => ({ docente_id: doc.id, grupo_id: x.value })); if (sel.length) await q(sb.from('docente_grupos').insert(sel)); cerrarModal(); toast('Grupos guardados.'); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } };
     }
     if (d.mat) return materiasDocente(docs.find(x => x.id === d.mat), grupos, mats, asig, recargar);
+    if (d.pedit) return editarPersona(docs.find(x => x.id === d.pedit), { alCambiar: recargar });
+    if (d.pdel) return borrarPersona(docs.find(x => x.id === d.pdel), recargar);
     if (d.reset) { const x = docs.find(y => y.id === d.reset); if (await confirmar({ titulo: 'Restablecer contraseña', texto: `La contraseña de <b>${esc(x.nombres)}</b> volverá a ser su número de documento. También puede recuperarla sola con su correo.`, si: 'Restablecer' })) { try { await usuarios({ accion: 'restablecer', id: x.id }); toast('Contraseña restablecida.'); } catch (er) { toast(errorMsg(er), 'error'); } } }
     if (d.activo) { const x = docs.find(y => y.id === d.activo); if (await confirmar({ titulo: x.activo ? 'Desactivar docente' : 'Activar docente', texto: x.activo ? 'Ya no podrá ingresar. Se conserva su información.' : 'Podrá ingresar de nuevo.', si: x.activo ? 'Desactivar' : 'Activar', peligro: x.activo })) { try { await usuarios({ accion: x.activo ? 'desactivar' : 'activar', id: x.id }); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } } }
   };
@@ -452,6 +457,9 @@ async function ajustes({ S, main, recargar }) {
         <div class="row" style="gap:6px"><span class="xs muted">Atajos:</span><button class="btn ghost sm" type="button" data-esc="1,5,3,1">1 a 5</button><button class="btn ghost sm" type="button" data-esc="0,10,6,1">0 a 10</button><button class="btn ghost sm" type="button" data-esc="0,100,60,0">0 a 100</button></div>
         <div><span class="lbl">Color del colegio</span><div class="swatches" style="margin-top:8px">${COLORES.map(x => `<button type="button" data-color="${x}" style="--sw:${x}" aria-label="Color ${x}" aria-pressed="${x.toLowerCase() === color.toLowerCase()}"></button>`).join('')}<label class="chk" title="Otro color"><input type="color" id="ocolor" value="${color}"></label></div></div>
         <button class="btn pri" type="button" data-gesc>Guardar escala y color</button></div>
+      <div class="card w12"><div class="row between" style="align-items:flex-start"><div><span class="lbl">Imagen</span><h2>Foto del colegio</h2><p class="small muted" style="max-width:60ch">Se ve en la franja de arriba de todas las pantallas del colegio, oscurecida para que el texto se lea. Use una foto propia del colegio, horizontal.</p></div>
+        <div class="row">${c.fondo_url ? `<button class="btn ghost sm" type="button" data-quitarfoto style="color:var(--bad)">Quitar foto</button>` : ''}<label class="btn sec sm" style="cursor:pointer">${ic('i-image', 15)}${c.fondo_url ? 'Cambiar foto' : 'Subir foto'}<input type="file" id="ffoto" accept="image/*" hidden></label></div></div>
+        ${c.fondo_url ? `<div class="fotoprev" style="background-image:url('${esc(c.fondo_url)}')"><span>Así se ve en la franja</span></div>` : ''}</div>
       <div class="card w12"><div class="row between"><div><span class="lbl">${mats.length} materias</span><h2>Materias del colegio</h2></div><div class="row"><input id="nmat" placeholder="Nueva materia" maxlength="60" style="border:1.5px solid var(--line);border-radius:12px;padding:9px 12px;background:var(--surface-2)"><select id="narea" aria-label="Área ICFES" style="border:1.5px solid var(--line);border-radius:12px;padding:9px;background:var(--surface-2)"><option value="">Sin área ICFES</option>${AREAS.map((a, i) => `<option value="${i}">${a}</option>`).join('')}</select><button class="btn pri sm" type="button" data-nmat>Agregar</button></div></div>
         <div class="row" style="gap:8px">${mats.map(m => `<span class="gchip">${esc(m.nombre)}${m.area != null ? ` <small class="muted">· ${SHORT[m.area]}</small>` : ''}<button type="button" data-dmat="${m.id}" aria-label="Quitar ${esc(m.nombre)}">×</button></span>`).join('')}</div>
         <p class="xs muted">El área ICFES de cada materia sirve para el plan de refuerzo de los estudiantes. Quitar una materia borra sus asignaciones; los exámenes quedan sin materia.</p></div>
@@ -475,6 +483,7 @@ async function ajustes({ S, main, recargar }) {
       const tramos = [['02-01', '04-10'], ['04-11', '06-20'], ['07-07', '09-12'], ['09-13', '11-30']];
       try { await q(sb.from('periodos').insert(tramos.map(([i, f], k) => ({ colegio_id: c.id, anio, numero: k + 1, nombre: `Período ${k + 1}`, inicio: `${anio}-${i}`, fin: `${anio}-${f}` })))); toast('Se crearon 4 períodos. Ajuste las fechas si hace falta.'); recargar(); } catch (er) { toast(errorMsg(er), 'error'); }
     }
+    if ('quitarfoto' in d) { try { await rpc('colegio_ajustes', { p_colegio: c.id, p: { fondo_url: '' } }); S.colegio.fondo_url = null; document.documentElement.style.removeProperty('--fondo'); toast('Foto quitada.'); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } }
     if (d.esc) { const [a, z, ap, dc] = d.esc.split(','); $('#emin').value = a; $('#emax').value = z; $('#eapr').value = ap; $('#edec').value = dc; }
     if (d.color) { color = d.color; $$('.swatches button').forEach(x => x.setAttribute('aria-pressed', x.dataset.color === color)); $('#ocolor').value = color; aplicarColor(color); }
     if ('gesc' in d) {
@@ -484,6 +493,12 @@ async function ajustes({ S, main, recargar }) {
     }
     if ('nmat' in d) { const n = $('#nmat').value.trim(); if (n.length < 2) return toast('Escriba el nombre de la materia.', 'error'); try { await q(sb.from('materias').insert({ colegio_id: c.id, nombre: n, area: $('#narea').value === '' ? null : +$('#narea').value })); toast('Materia agregada.'); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } }
     if (d.dmat) { const m = mats.find(x => x.id === d.dmat); if (!await confirmar({ titulo: `¿Quitar ${esc(m.nombre)}?`, texto: 'Se borran sus asignaciones a docentes. Los exámenes de esa materia quedan sin materia.', si: 'Quitar', peligro: true })) return; try { await q(sb.from('materias').delete().eq('id', m.id)); recargar(); } catch (er) { toast(errorMsg(er), 'error'); } }
+  };
+  main.onchange = async e => {
+    if (e.target.id !== 'ffoto') return; const f = e.target.files[0]; if (!f) return;
+    if (f.size > 4 * 1024 * 1024) return toast('La foto pesa más de 4 MB. Use una más liviana.', 'error');
+    try { toast('Subiendo foto…'); const url = await subirArchivo('escudos', f, `fondos/${c.id}/fondo`); await rpc('colegio_ajustes', { p_colegio: c.id, p: { fondo_url: url } }); S.colegio.fondo_url = url; document.documentElement.style.setProperty('--fondo', `url("${url}")`); toast('Foto guardada.'); recargar(); }
+    catch (er) { toast(errorMsg(er), 'error'); }
   };
   main.oninput = e => { if (e.target.id === 'ocolor') { color = e.target.value; aplicarColor(color); $$('.swatches button').forEach(x => x.setAttribute('aria-pressed', 'false')); } };
 }
