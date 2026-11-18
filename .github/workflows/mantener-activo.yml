@@ -1,0 +1,29 @@
+# Mantiene despiertas las bases de datos gratuitas de Supabase (FORTALECER y Evalux).
+# Supabase pausa los proyectos gratuitos que pasan 7 días sin uso.
+# Este archivo hace una consulta pequeña cada día, sin costo y sin cambiar ningún dato.
+# Solo usa las llaves publicables, las mismas que ya están en config.js. No necesita contraseñas.
+# Va en el repositorio, en la carpeta: .github/workflows/mantener-activo.yml
+name: Mantener activo Supabase
+
+on:
+  schedule:
+    - cron: "17 13 * * *"   # todos los días, 8:17 a. m. hora de Colombia
+  workflow_dispatch:         # botón "Run workflow" para probarlo a mano
+
+jobs:
+  despertar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: FORTALECER
+        continue-on-error: true
+        run: |
+          curl -fsS "https://afpnguainugypfncbiby.supabase.co/rest/v1/colegios?select=id&limit=1" \
+            -H "apikey: sb_publishable_CsrQGGJKO0sHNuRDSIU2dA_rieMdOwL" \
+            -o /dev/null -w "FORTALECER respondió: %{http_code}\n"
+
+      - name: Evalux
+        continue-on-error: true
+        run: |
+          curl -fsS "https://bsadohzmgywhdrkxuepj.supabase.co/rest/v1/ajustes?select=*&limit=1" \
+            -H "apikey: sb_publishable__js2qIEpt4H8lDgi396hzw_XWtBsQbs" \
+            -o /dev/null -w "Evalux respondió: %{http_code}\n"
